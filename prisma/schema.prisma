@@ -1,0 +1,73 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String    @id @default(uuid())
+  username String    @unique
+  password String
+  boards   Board[]
+  comments Comment[]
+  imageUrl String?
+}
+
+model Board {
+  id       Int      @id @default(autoincrement())
+  title    String
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  columns  Column[]
+  imageUrl String?
+}
+
+model Column {
+  id        Int      @id @default(autoincrement())
+  title     String
+  boardId   Int
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  cards     Card[]
+  createdAt DateTime @default(now())
+}
+
+model Card {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  columnId    Int
+  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  comments    Comment[]
+  labels      Label[]
+  attachments String[]
+  createdAt   DateTime  @default(now())
+  dueDate     DateTime?
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  cardId    Int
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Label {
+  id         Int    @id @default(autoincrement())
+  name       String
+  color      String
+  hoverColor String
+  cardId     Int
+  card       Card   @relation(fields: [cardId], references: [id])
+}
