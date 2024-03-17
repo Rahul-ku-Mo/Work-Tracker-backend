@@ -14,21 +14,35 @@ datasource db {
 }
 
 model User {
-  id       String    @id @default(uuid())
-  username String    @unique
-  password String
-  boards   Board[]
-  comments Comment[]
-  imageUrl String?
+  id          String    @id @default(uuid())
+  email       String    @unique
+  password    String?
+  name        String?
+  username    String?   @unique
+  boards      Board[]
+  comments    Comment[]
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  phoneNumber String?
+  state       String?
+  address     String?
+  zipCode     String?
+  company     String?
+  Role        String?
+  updatedAt   DateTime  @default(now())
 }
 
 model Board {
-  id       Int      @id @default(autoincrement())
-  title    String
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  columns  Column[]
-  imageUrl String?
+  id            Int      @id @default(autoincrement())
+  title         String
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  columns       Column[]
+  imageId       String
+  imageThumbUrl String
+  imageFullUrl  String
+  imageLinkHTML String
+  imageUserName String
 }
 
 model Column {

@@ -1,4 +1,6 @@
 const { prisma } = require("../db");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const passport = require("passport");
 const {
   signToken,
   hashedPassword,
@@ -6,11 +8,11 @@ const {
 } = require("../utils/validation");
 
 exports.signup = async (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
 
   //1.check for existing user
   const existingUser = await prisma.user.findUnique({
-    where: { username: username },
+    where: { email: email },
   });
 
   if (existingUser) {
@@ -24,12 +26,12 @@ exports.signup = async (req, res) => {
   try {
     const user = await prisma.user.create({
       data: {
-        username: username,
+        email: email,
         password: cryptPassword,
       },
       select: {
         id: true,
-        username: true,
+        email: true,
       },
     });
 
@@ -43,21 +45,21 @@ exports.signup = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
 
-  if (!username || !password)
+  if (!email || !password)
     return res
       .status(400)
-      .json({ status: 400, message: "Please provide a username and password" });
+      .json({ status: 400, message: "Please provide a email and password" });
 
   const user = await prisma.user.findUnique({
-    where: { username: username },
+    where: { email: email },
   });
 
   if (!user)
     return res
       .status(401)
-      .json({ status: 401, message: "Invalid username. Check again!" });
+      .json({ status: 401, message: "Invalid email. Check again!" });
 
   const passwordMatch = await validatePassword(password, user.password);
 
@@ -69,6 +71,17 @@ exports.login = async (req, res) => {
 
   const token = signToken(user.id);
 
+  const CookieOptions = {
+    expires: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    httpOnly: true,
+  };
+
+  if (process.env.NODE_ENV === "production") {
+    CookieOptions.secure = true;
+  }
+
+  res.cookie("jwt", token, CookieOptions);
+
   //eliminate the password field!!
   user.password = undefined;
 
@@ -77,4 +90,111 @@ exports.login = async (req, res) => {
     accesstoken: token,
     data: user,
   });
+};
+
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "http://localhost:8000/api/v1/oauth2/google/callback",
+    },
+    async function (accessToken, refreshToken, profile, done) {
+      const email = profile.emails[0].value;
+      const imageUrl = profile.photos[0].value;
+      const name = profile.displayName;
+
+      const user = await prisma.user.findUnique({
+        where: { email: email },
+      });
+
+      if (!user) {
+        const newUser = await prisma.user.create({
+          data: {
+            email: email,
+            imageUrl: imageUrl,
+            name: name,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            imageUrl: true,
+          },
+        });
+
+        return done(null, newUser);
+      }
+
+      return done(null, user);
+    }
+  )
+);
+
+passport.serializeUser(function (user, cb) {
+  process.nextTick(function () {
+    cb(null, { id: user.id, username: user.username, name: user.name });
+  });
+});
+
+passport.deserializeUser(function (user, cb) {
+  process.nextTick(function () {
+    return cb(null, user);
+  });
+});
+
+exports.oauthGoogleLogin = passport.authenticate("google", {
+  scope: ["profile", "email"],
+});
+
+const sendScriptResponse = (res, message, url, user) => {
+  if (message === "login-success") {
+    res.accessToken = signToken(user.id);
+  }
+
+  res.send(`
+    <script>
+      window.opener.postMessage({
+        status: '${message}',
+        accessToken: '${res.accessToken}',
+      }, '${url}');
+     
+    </script>
+  `);
+};
+
+const handleLogin = (req, res, next) => (err, user) => {
+  if (err) {
+    return next(err);
+  }
+
+  if (!user) {
+    return sendScriptResponse(
+      res,
+      "login-failure",
+      "http://localhost:5173/auth",
+      user
+    );
+  }
+
+  req.logIn(user, function (err) {
+    if (err) {
+      return next(err);
+    }
+
+    sendScriptResponse(
+      res,
+      "login-success",
+      "http://localhost:5173/kanban",
+      user
+    );
+  });
+};
+
+exports.googleLoginCallback = (req, res, next) => {
+  passport.authenticate(
+    "google",
+    { failureRedirect: "/auth" },
+    handleLogin(req, res, next)
+  )(req, res, next);
 };

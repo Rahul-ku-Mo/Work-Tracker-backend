@@ -5,13 +5,32 @@ const authRouter = require("./routes/authRoutes");
 const commentRouter = require("./routes/commentRoutes");
 const columnRouter = require("./routes/columnRoutes");
 const cardRouter = require("./routes/cardRoutes");
-
+const session = require("express-session");
+const passport = require("passport");
 const app = express();
-const port = 8000 || process.env.PORT;
+const cors = require("cors");
 
+const port = 8000 || process.env.PORT;
+app.use(
+  cors({
+    origin: "*",
+  })
+);
 app.use(express.json());
 
-app.use("/api/v1/auth", authRouter);
+app.use(
+  session({
+    secret: "your-session-secret",
+    resave: false,
+    saveUninitialized: true,
+  })
+);
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.use("/api/v1", authRouter);
 
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/boards", boardRouter);

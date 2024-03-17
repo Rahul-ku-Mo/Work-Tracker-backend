@@ -7,11 +7,7 @@ exports.getColumns = async (req, res) => {
     const columns = await prisma.column.findMany({
       where: { boardId: parseInt(boardId) },
       include: {
-        cards: {
-          include: {
-            comments: true,
-          },
-        },
+        cards: true,
       },
     });
 
@@ -48,6 +44,9 @@ exports.createColumn = async (req, res) => {
         board: {
           connect: { id: parseInt(boardId) },
         },
+        include: {
+          cards: true
+        }
       },
     });
 
@@ -75,16 +74,12 @@ exports.getColumn = async (req, res) => {
     const column = await prisma.column.findUnique({
       where: { id: parseInt(columnId) },
       include: {
-        cards: {
-          include: {
-            comments: true,
-          },
-        },
+        cards: true,
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
       data: column,
     });
@@ -102,9 +97,7 @@ exports.updateColumn = async (req, res) => {
       where: { id: parseInt(columnId) },
       data: { title },
       include: {
-        cards: {
-          include: { comments: true },
-        },
+        cards: true,
       },
     });
 

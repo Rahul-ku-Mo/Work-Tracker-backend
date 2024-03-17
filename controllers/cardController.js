@@ -73,8 +73,8 @@ exports.getCards = async (req, res) => {
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
       data: cards,
     });
@@ -96,8 +96,8 @@ exports.getCard = async (req, res) => {
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
       data: cards,
     });

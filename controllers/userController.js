@@ -46,10 +46,65 @@ exports.getUsers = async (req, res) => {
 };
 
 exports.getUser = async (req, res) => {
-  const { userId } = req.params;
+  const { userId } = req.user;
+
   try {
     const user = await prisma.user.findUnique({
-      where: { id: parseInt(userId) },
+      where: { id: userId },
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: user,
+    });
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  const { userId } = req.user;
+
+  const {
+    name,
+    phoneNumber,
+    state,
+    company,
+    Role,
+    address,
+    zipCode,
+    imageUrl,
+  } = req.body;
+
+  const data = {};
+
+  data.updatedAt = new Date(Date.now());
+
+  if (name !== undefined) data.name = name;
+  if (phoneNumber !== undefined) data.phoneNumber = phoneNumber;
+  if (state !== undefined) data.state = state;
+  if (address !== undefined) data.address = address;
+  if (zipCode !== undefined) data.zipCode = zipCode;
+  if (imageUrl !== undefined) data.imageUrl = imageUrl;
+  if (company !== undefined) data.company = company;
+  if (Role !== undefined) data.Role = Role;
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phoneNumber: true,
+        state: true,
+        address: true,
+        zipCode: true,
+        imageUrl: true,
+        company: true,
+        Role: true,
+      },
     });
 
     res.status(200).json({

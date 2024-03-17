@@ -13,8 +13,8 @@ exports.getBoards = async (req, res) => {
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
       data: boards,
     });
@@ -34,14 +34,14 @@ exports.getBoard = async (req, res) => {
 
   try {
     const board = await prisma.board.findUnique({
-      where: { boardId: boardId },
+      where: { id: parseInt(boardId) },
       include: {
         columns: true,
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
       data: board,
     });
@@ -52,14 +52,25 @@ exports.getBoard = async (req, res) => {
 
 exports.createBoard = async (req, res) => {
   try {
-    const { title, imageUrl } = req.body;
+    const {
+      title,
+      imageId,
+      imageThumbUrl,
+      imageFullUrl,
+      imageLinkHTML,
+      imageUserName,
+    } = req.body;
 
     const { userId } = req.user;
 
     const board = await prisma.board.create({
       data: {
         title,
-        imageUrl,
+        imageId,
+        imageThumbUrl,
+        imageFullUrl,
+        imageLinkHTML,
+        imageUserName,
         user: {
           connect: { id: userId },
         },
@@ -80,7 +91,7 @@ exports.deleteBoard = async (req, res) => {
   const { boardId } = req.params;
 
   try {
-    await prisma.board.delete({ where: { id: boardId } });
+    await prisma.board.delete({ where: { id: parseInt(boardId) } });
 
     res.status(204).json({
       status: 204,
