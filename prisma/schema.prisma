@@ -29,7 +29,7 @@ model User {
   zipCode     String?
   company     String?
   Role        String?
-  updatedAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Board {
@@ -47,16 +47,19 @@ model Board {
 
 model Column {
   id        Int      @id @default(autoincrement())
+  order     Int
   title     String
   boardId   Int
   board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   cards     Card[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Card {
   id          Int       @id @default(autoincrement())
   title       String
+  order       Int
   description String?
   columnId    Int
   column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade, onUpdate: Cascade)
@@ -65,6 +68,7 @@ model Card {
   attachments String[]
   createdAt   DateTime  @default(now())
   dueDate     DateTime?
+  updatedAt   DateTime  @updatedAt
 }
 
 model Comment {
@@ -78,10 +82,10 @@ model Comment {
 }
 
 model Label {
-  id         Int    @id @default(autoincrement())
-  name       String
-  color      String
-  hoverColor String
-  cardId     Int
-  card       Card   @relation(fields: [cardId], references: [id])
+  id        Int      @id @default(autoincrement())
+  name      String
+  color     String
+  cardId    Int
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdAt DateTime @default(now())
 }

@@ -7,6 +7,23 @@ const {
   validatePassword,
 } = require("../utils/validation");
 
+exports.createSendToken = (user, res) => {
+  const token = signToken(user.id);
+
+  const CookieOptions = {
+    expires: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    httpOnly: true,
+  };
+
+  if (process.env.NODE_ENV === "production") {
+    CookieOptions.secure = true;
+  }
+
+  res.cookie("jwt", token, CookieOptions);
+
+  return token;
+};
+
 exports.signup = async (req, res) => {
   const { email, password } = req.body;
 
@@ -35,9 +52,12 @@ exports.signup = async (req, res) => {
       },
     });
 
+    const token = this.createSendToken(user, res);
+
     res.status(201).json({
       message: "success",
       data: user,
+      token,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -69,23 +89,11 @@ exports.login = async (req, res) => {
       .json({ status: 401, message: "Invalid password. Check again!" });
   }
 
-  const token = signToken(user.id);
-
-  const CookieOptions = {
-    expires: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-    httpOnly: true,
-  };
-
-  if (process.env.NODE_ENV === "production") {
-    CookieOptions.secure = true;
-  }
-
-  res.cookie("jwt", token, CookieOptions);
-
+  const token = this.createSendToken(user, res);
   //eliminate the password field!!
   user.password = undefined;
 
-  res.status(201).json({
+  res.status(200).json({
     message: "success",
     accesstoken: token,
     data: user,

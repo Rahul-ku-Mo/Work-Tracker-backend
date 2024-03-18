@@ -1,5 +1,9 @@
 const { prisma } = require("../db");
 
+
+exports.checkUserExistsInRedis = async (req, res, next) =>{
+  
+}
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
 

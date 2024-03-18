@@ -6,9 +6,20 @@ exports.createCard = async (req, res) => {
   try {
     const { title } = req.body;
 
+    const lastCard = await prisma.card.findFirst({
+      where: { columnId: parseInt(columnId) },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    });
+
+    // If a column was found, increment its order value for the new column.
+    // If no column was found, start the ordering at 1.
+    const newOrder = lastCard ? lastCard.order + 1 : 1;
+
     const card = await prisma.card.create({
       data: {
         title: title,
+        order: newOrder,
         column: {
           connect: {
             id: parseInt(columnId),
@@ -29,12 +40,13 @@ exports.createCard = async (req, res) => {
 
 exports.updateCard = async (req, res) => {
   const { cardId } = req.params;
-  const { title, description, columnId, labels, attachments, dueDate } =
+  const { title, description, columnId, labels, attachments, dueDate, order } =
     req.body;
 
   try {
     const data = {};
     if (title !== undefined) data.title = title;
+    if (order !== undefined) data.order = order;
     if (description !== undefined) data.description = description;
     if (columnId !== undefined) data.columnId = parseInt(columnId);
     if (labels !== undefined) data.labels = labels;

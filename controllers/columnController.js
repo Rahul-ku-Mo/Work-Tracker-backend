@@ -7,7 +7,11 @@ exports.getColumns = async (req, res) => {
     const columns = await prisma.column.findMany({
       where: { boardId: parseInt(boardId) },
       include: {
-        cards: true,
+        cards: {
+          include: {
+            labels: true,
+          },
+        },
       },
     });
 
@@ -38,15 +42,23 @@ exports.createColumn = async (req, res) => {
 
     const { title } = req.body;
 
+    const lastColumn = await prisma.column.findFirst({
+      where: { boardId: parseInt(boardId) },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    });
+
+    // If a column was found, increment its order value for the new column.
+    // If no column was found, start the ordering at 1.
+    const newOrder = lastColumn ? lastColumn.order + 1 : 1;
+
     const column = await prisma.column.create({
       data: {
         title,
+        order: newOrder,
         board: {
           connect: { id: parseInt(boardId) },
         },
-        include: {
-          cards: true
-        }
       },
     });
 
@@ -90,12 +102,17 @@ exports.getColumn = async (req, res) => {
 
 exports.updateColumn = async (req, res) => {
   const { columnId } = req.params;
-  const { title } = req.body;
+  const { title, newOrder } = req.body;
 
   try {
+    const updatedData = {};
+
+    if (title !== undefined) updatedData.title = title;
+    if (newOrder !== undefined) updatedData.order = newOrder;
+
     const column = await prisma.column.update({
       where: { id: parseInt(columnId) },
-      data: { title },
+      updatedData,
       include: {
         cards: true,
       },
