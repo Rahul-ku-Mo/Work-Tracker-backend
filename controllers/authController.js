@@ -180,7 +180,7 @@ const handleLogin = (req, res, next) => (err, user) => {
     return sendScriptResponse(
       res,
       "login-failure",
-      "http://localhost:5173/auth",
+      "https://work-tracker-chi.vercel.app/auth",
       user
     );
   }
