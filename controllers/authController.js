@@ -105,7 +105,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "https://work-tracker-backend.onrender.com/api/v1/oauth2/google/callback",
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
     },
     async function (accessToken, refreshToken, profile, done) {
       const email = profile.emails[0].value;
@@ -180,7 +180,7 @@ const handleLogin = (req, res, next) => (err, user) => {
     return sendScriptResponse(
       res,
       "login-failure",
-      "https://work-tracker-chi.vercel.app/auth",
+      process.env.FAILURE_REDIRECT_URL,
       user
     );
   }
@@ -193,7 +193,7 @@ const handleLogin = (req, res, next) => (err, user) => {
     sendScriptResponse(
       res,
       "login-success",
-      "http://localhost:5173/kanban",
+      process.env.SUCCESS_REDIRECT_URL,
       user
     );
   });
