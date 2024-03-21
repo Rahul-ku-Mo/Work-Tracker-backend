@@ -148,10 +148,10 @@ exports.deleteColumn = async (req, res) => {
 };
 
 exports.updateColumnsOrder = async (req, res) => {
-  const { updatedColumns } = req.body;
+  const { columns } = req.body;
 
   const transaction = prisma.$transaction(
-    updatedColumns.map((column) => {
+    columns.map((column) => {
       return prisma.column.update({
         wjeere: { id: column.id },
         data: {
