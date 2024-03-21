@@ -14,7 +14,8 @@ router.use(userController.checkUserExists);
 router
   .route("/")
   .get(columnController.getColumns)
-  .post(columnController.createColumn);
+  .post(columnController.createColumn)
+  .patch(columnController.updateColumnsOrder);
 
 router
   .route("/:columnId")

@@ -146,3 +146,25 @@ exports.deleteColumn = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.updateColumnsOrder = async (req, res) => {
+  const { updatedColumns } = req.body;
+
+  const transaction = prisma.$transaction(
+    updatedColumns.map((column) => {
+      return prisma.column.update({
+        wjeere: { id: column.id },
+        data: {
+          order: column.order,
+        },
+      });
+    })
+  );
+
+  try {
+    await transaction;
+    res.status(200).json({ message: "Columns order updated successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update columns order" });
+  }
+};
