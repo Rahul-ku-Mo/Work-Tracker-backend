@@ -153,7 +153,7 @@ exports.updateColumnsOrder = async (req, res) => {
   const transaction = prisma.$transaction(
     columns.map((column) => {
       return prisma.column.update({
-        wjeere: { id: column.id },
+        where: { id: column.id },
         data: {
           order: column.order,
         },
