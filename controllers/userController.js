@@ -1,7 +1,5 @@
 const { prisma } = require("../db");
 
-const { redisClient } = require("../db");
-
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
 
@@ -50,40 +48,19 @@ exports.getUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
-  redisClient.get(`user:${userId}`, async (err, result) => {
-    if (err) {
-      console.error('Error getting data from Redis:', err);
-      res.status(500).json({ status: 500, message: "Internal server error" });
-      return;
-    }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
 
-    if (result) {
-      // If the data is in the cache, return it
-      res.status(200).json({
-        status: 200,
-        message: "Success",
-        data: JSON.parse(result),
-      });
-    } else {
-      try {
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-        });
-
-        // Save the fetched data in the cache
-        redisClient.setEx(`user:${userId}`, 3600, JSON.stringify(user));
-
-        res.status(200).json({
-          status: 200,
-          message: "Success",
-          data: user,
-        });
-      } catch (error) {
-        console.log(error);
-        res.status(500).json({ status: 500, message: "Internal server error" });
-      }
-    }
-  });
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: user,
+    });
+  } catch (error) {
+    console.log(error);
+  }
 };
 
 exports.updateUser = async (req, res) => {
@@ -129,9 +106,6 @@ exports.updateUser = async (req, res) => {
         Role: true,
       },
     });
-
-    // Save the fetched data in the cache
-    redisClient.set(`user:${userId}`, 3600, JSON.stringify(user));
 
     res.status(200).json({
       status: 200,
