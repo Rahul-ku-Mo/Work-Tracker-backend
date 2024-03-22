@@ -50,7 +50,7 @@ exports.getUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
-  redisClient.get(`user:${userId}`, async (err, data) => {
+  redisClient.get(`user:${userId}`, async (err, result) => {
     if (result) {
       // If the data is in the cache, return it
       res.status(200).json({
