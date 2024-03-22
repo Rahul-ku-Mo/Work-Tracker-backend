@@ -1,9 +1,7 @@
 const { prisma } = require("../db");
 
+const { redisClient } = require("../db");
 
-exports.checkUserExistsInRedis = async (req, res, next) =>{
-  
-}
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
 
@@ -52,19 +50,33 @@ exports.getUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+  redisClient.get(`user:${userId}`, async (err, data) => {
+    if (result) {
+      // If the data is in the cache, return it
+      res.status(200).json({
+        status: 200,
+        message: "Success",
+        data: JSON.parse(result),
+      });
+    } else {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+        });
 
-    res.status(200).json({
-      status: 200,
-      message: "Success",
-      data: user,
-    });
-  } catch (error) {
-    console.log(error);
-  }
+        // Save the fetched data in the cache
+        redisClient.set(`user:${userId}`, 3600, JSON.stringify(user));
+
+        res.status(200).json({
+          status: 200,
+          message: "Success",
+          data: user,
+        });
+      } catch (error) {
+        console.log(error);
+      }
+    }
+  });
 };
 
 exports.updateUser = async (req, res) => {
@@ -110,6 +122,9 @@ exports.updateUser = async (req, res) => {
         Role: true,
       },
     });
+
+    // Save the fetched data in the cache
+    redisClient.set(`user:${userId}`, 3600, JSON.stringify(user));
 
     res.status(200).json({
       status: 200,
