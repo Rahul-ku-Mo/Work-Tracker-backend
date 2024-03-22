@@ -51,6 +51,12 @@ exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
   redisClient.get(`user:${userId}`, async (err, result) => {
+    if (err) {
+      console.error('Error getting data from Redis:', err);
+      res.status(500).json({ status: 500, message: "Internal server error" });
+      return;
+    }
+
     if (result) {
       // If the data is in the cache, return it
       res.status(200).json({
@@ -74,6 +80,7 @@ exports.getUser = async (req, res) => {
         });
       } catch (error) {
         console.log(error);
+        res.status(500).json({ status: 500, message: "Internal server error" });
       }
     }
   });
