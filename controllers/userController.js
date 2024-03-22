@@ -65,7 +65,7 @@ exports.getUser = async (req, res) => {
         });
 
         // Save the fetched data in the cache
-        redisClient.set(`user:${userId}`, 3600, JSON.stringify(user));
+        redisClient.setEx(`user:${userId}`, 3600, JSON.stringify(user));
 
         res.status(200).json({
           status: 200,
