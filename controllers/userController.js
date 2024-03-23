@@ -1,4 +1,4 @@
-const { prisma } = require("../db");
+const { prisma, client } = require("../db");
 
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
@@ -48,10 +48,31 @@ exports.getUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
+  if (userId === null || userId === undefined) {
+    return res.status(400).json({
+      status: 400,
+      message: "Invalid user ID",
+    });
+  }
+
+  const value = await client.get(`userId:${userId}`);
+
+  if (value) {
+    return res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: JSON.parse(value),
+    });
+  }
+
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
+
+    if (user) {
+      await client.set(`userId:${userId}`, JSON.stringify(user));
+    }
 
     res.status(200).json({
       status: 200,
@@ -89,6 +110,7 @@ exports.updateUser = async (req, res) => {
   if (imageUrl !== undefined) data.imageUrl = imageUrl;
   if (company !== undefined) data.company = company;
   if (Role !== undefined) data.Role = Role;
+
   try {
     const user = await prisma.user.update({
       where: { id: userId },
@@ -106,6 +128,8 @@ exports.updateUser = async (req, res) => {
         Role: true,
       },
     });
+
+    await client.set(`userId:${userId}`, JSON.stringify(user));
 
     res.status(200).json({
       status: 200,

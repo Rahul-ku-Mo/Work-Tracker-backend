@@ -16,8 +16,10 @@ const client = createClient({
 // 1.Create a new PrismaClient instance
 const prisma = new PrismaClient();
 
-client.on('error', err => console.log('Redis Client Error', err));
+client.on("error", (err) => console.log("Redis Client Error", err));
 
-await redisClient.connect();
+(async () => {
+  await client.connect();
+})();
 
 module.exports = { prisma, PrismaClientKnownRequestError, client };
