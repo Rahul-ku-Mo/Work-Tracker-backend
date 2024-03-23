@@ -5,7 +5,7 @@ const {
 
 const { createClient } = require("redis");
 
-const redisClient = createClient({
+const client = createClient({
   password: process.env.REDIS_PASSWORD,
   socket: {
     host: process.env.REDIS_HOST,
@@ -16,6 +16,8 @@ const redisClient = createClient({
 // 1.Create a new PrismaClient instance
 const prisma = new PrismaClient();
 
-const client = redisClient.connect();
+client.on('error', err => console.log('Redis Client Error', err));
 
-module.exports = { prisma, PrismaClientKnownRequestError, redisClient, client };
+await redisClient.connect();
+
+module.exports = { prisma, PrismaClientKnownRequestError, client };

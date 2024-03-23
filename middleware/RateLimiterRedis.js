@@ -1,16 +1,16 @@
 const { RateLimiterRedis } = require("rate-limiter-flexible");
-const { redisClient } = require("../db");
+const { client } = require("../db");
 
 const rateLimiter = new RateLimiterRedis({
   points: 100, // Number of requests
   duration: 10 * 60, // Per  minutes
-  storeClient: redisClient,
+  storeClient: client,
 });
 
 exports.rateLimiterMiddleware = (req, res, next) => {
   if (req.url === "/api/v1/users") {
     rateLimiter
-      .consume(req.ip , 2,)
+      .consume(req.ip, 2)
       .then(() => {
         next();
       })
@@ -21,4 +21,3 @@ exports.rateLimiterMiddleware = (req, res, next) => {
     next();
   }
 };
-
