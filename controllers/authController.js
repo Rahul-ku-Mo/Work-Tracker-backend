@@ -143,8 +143,22 @@ exports.oauthGoogleLogin = async (req, res) => {
         username: username,
       },
       select: {
-        "*": true,
-        password: false,
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        boards: true,
+        comments: true,
+        imageUrl: true,
+        createdAt: true,
+        phoneNumber: true,
+        state: true,
+        address: true,
+        zipCode: true,
+        company: true,
+        role: true,
+        updatedAt: true,
+        password: false, // Exclude password
       },
     });
   }
