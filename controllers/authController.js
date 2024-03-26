@@ -104,7 +104,6 @@ exports.login = async (req, res) => {
   });
 };
 
-
 exports.oauthGoogleLogin = async (req, res) => {
   const { tokens } = await oAuth2Client.getToken(req.body.code);
   const user = authenticateTokenFromGoogle(tokens.id_token);
@@ -112,6 +111,24 @@ exports.oauthGoogleLogin = async (req, res) => {
   let existingUser = await prisma.user.findUnique({
     where: {
       email: user.email,
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      username: true,
+      boards: true,
+      comments: true,
+      imageUrl: true,
+      createdAt: true,
+      phoneNumber: true,
+      state: true,
+      address: true,
+      zipCode: true,
+      company: true,
+      role: true,
+      updatedAt: true,
+      password: false, // Exclude password
     },
   });
 
@@ -123,7 +140,11 @@ exports.oauthGoogleLogin = async (req, res) => {
         email: user.email,
         imageUrl: user.picture,
         name: user.name,
-        username: username, // Add username to user
+        username: username,
+      },
+      select: {
+        "*": true,
+        password: false,
       },
     });
   }
