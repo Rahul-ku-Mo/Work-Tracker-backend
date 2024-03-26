@@ -56,12 +56,12 @@ exports.signup = async (req, res) => {
       },
     });
 
-    const token = this.createSendToken(user, res);
+    const accesstoken = this.createSendToken(user, res);
 
     res.status(201).json({
       message: "success",
       data: user,
-      token,
+      accesstoken,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -93,13 +93,13 @@ exports.login = async (req, res) => {
       .json({ status: 401, message: "Invalid password. Check again!" });
   }
 
-  const token = this.createSendToken(user, res);
+  const accesstoken = this.createSendToken(user, res);
   //eliminate the password field!!
   user.password = undefined;
 
   res.status(200).json({
     message: "success",
-    accesstoken: token,
+    accesstoken,
     data: user,
   });
 };
@@ -163,9 +163,9 @@ exports.oauthGoogleLogin = async (req, res) => {
     });
   }
 
-  const token = this.createSendToken(existingUser, res);
+  const accesstoken = this.createSendToken(existingUser, res);
 
   return res
     .status(200)
-    .json({ message: "success", data: existingUser, token });
+    .json({ message: "success", data: existingUser, accesstoken });
 };
