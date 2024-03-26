@@ -7,7 +7,7 @@ const router = express.Router();
 router
   .post("/signup", authController.signup)
   .post("/login", authController.login)
-  .get("/oauth2/google", authController.oauthGoogleLogin)
-  .get("/oauth2/google/callback", authController.googleLoginCallback);
+  .post("/oauth2/google", authController.oauthGoogleLogin);
+// .get("/oauth2/google/callback", authController.googleLoginCallback);
 
 module.exports = router;

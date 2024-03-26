@@ -1,10 +1,13 @@
 const { prisma } = require("../db");
-const GoogleStrategy = require("passport-google-oauth20").Strategy;
-const passport = require("passport");
+
+// const GoogleStrategy = require("passport-google-oauth20").Strategy;
+// const passport = require("passport");
+const { oAuth2Client } = require("../services/GoogleAuth");
 const {
   signToken,
   hashedPassword,
   validatePassword,
+  authenticateTokenFromGoogle,
 } = require("../utils/validation");
 
 exports.createSendToken = (user, res) => {
@@ -101,109 +104,33 @@ exports.login = async (req, res) => {
   });
 };
 
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL,
+
+exports.oauthGoogleLogin = async (req, res) => {
+  const { tokens } = await oAuth2Client.getToken(req.body.code);
+  const user = authenticateTokenFromGoogle(tokens.id_token);
+
+  let existingUser = await prisma.user.findUnique({
+    where: {
+      email: user.email,
     },
-    async function (accessToken, refreshToken, profile, done) {
-      const email = profile.emails[0].value;
-      const imageUrl = profile.photos[0].value;
-      const name = profile.displayName;
-
-      const user = await prisma.user.findUnique({
-        where: { email: email },
-      });
-
-      if (!user) {
-        const newUser = await prisma.user.create({
-          data: {
-            email: email,
-            imageUrl: imageUrl,
-            name: name,
-          },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            imageUrl: true,
-          },
-        });
-
-        return done(null, newUser);
-      }
-
-      return done(null, user);
-    }
-  )
-);
-
-passport.serializeUser(function (user, cb) {
-  process.nextTick(function () {
-    cb(null, { id: user.id, username: user.username, name: user.name });
   });
-});
 
-passport.deserializeUser(function (user, cb) {
-  process.nextTick(function () {
-    return cb(null, user);
-  });
-});
+  if (!existingUser) {
+    const username = `${user.name}_worktracker`; // Create username
 
-exports.oauthGoogleLogin = passport.authenticate("google", {
-  scope: ["profile", "email"],
-});
-
-const sendScriptResponse = (res, message, url, user) => {
-  if (message === "login-success") {
-    res.accessToken = signToken(user.id);
+    existingUser = await prisma.user.create({
+      data: {
+        email: user.email,
+        imageUrl: user.picture,
+        name: user.name,
+        username: username, // Add username to user
+      },
+    });
   }
 
-  res.send(`
-    <script>
-      window.opener.postMessage({
-        status: '${message}',
-        accessToken: '${res.accessToken}',
-      }, '${url}');
-     
-    </script>
-  `);
-};
+  const token = this.createSendToken(existingUser, res);
 
-const handleLogin = (req, res, next) => (err, user) => {
-  if (err) {
-    return next(err);
-  }
-
-  if (!user) {
-    return sendScriptResponse(
-      res,
-      "login-failure",
-      process.env.FAILURE_REDIRECT_URL,
-      user
-    );
-  }
-
-  req.logIn(user, function (err) {
-    if (err) {
-      return next(err);
-    }
-
-    sendScriptResponse(
-      res,
-      "login-success",
-      process.env.SUCCESS_REDIRECT_URL,
-      user
-    );
-  });
-};
-
-exports.googleLoginCallback = (req, res, next) => {
-  passport.authenticate(
-    "google",
-    { failureRedirect: "/auth" },
-    handleLogin(req, res, next)
-  )(req, res, next);
+  return res
+    .status(200)
+    .json({ message: "success", data: existingUser, token });
 };

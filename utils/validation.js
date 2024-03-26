@@ -36,3 +36,7 @@ exports.authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+exports.authenticateTokenFromGoogle = (token) => {
+  return jwt.decode(token);
+};
