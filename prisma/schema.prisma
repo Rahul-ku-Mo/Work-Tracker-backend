@@ -14,22 +14,34 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(uuid())
-  email       String    @unique
-  password    String?
-  name        String?
-  username    String?   @unique
-  boards      Board[]
-  comments    Comment[]
-  imageUrl    String?
-  createdAt   DateTime  @default(now())
-  phoneNumber String?
-  state       String?
-  address     String?
-  zipCode     String?
-  company     String?
-  Role        String?
-  updatedAt   DateTime  @updatedAt
+  id                 String         @id @default(uuid())
+  email              String         @unique
+  password           String?
+  name               String?
+  username           String?        @unique
+  boards             Board[]
+  comments           Comment[]
+  imageUrl           String?
+  createdAt          DateTime       @default(now())
+  phoneNumber        String?
+  state              String?
+  address            String?
+  zipCode            String?
+  company            String?
+  role               String?
+  updatedAt          DateTime       @updatedAt
+  organizationMember Organization[] @relation("members")
+  organizationLead   Organization?  @relation("teamLead")
+}
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  teamLead   User     @relation("teamLead", fields: [teamLeadId], references: [id])
+  teamLeadId String   @unique
+  members    User[]   @relation("members")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Board {

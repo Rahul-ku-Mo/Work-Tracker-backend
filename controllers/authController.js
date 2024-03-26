@@ -25,7 +25,7 @@ exports.createSendToken = (user, res) => {
 };
 
 exports.signup = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, username } = req.body;
 
   //1.check for existing user
   const existingUser = await prisma.user.findUnique({
@@ -45,6 +45,7 @@ exports.signup = async (req, res) => {
       data: {
         email: email,
         password: cryptPassword,
+        username: username,
       },
       select: {
         id: true,
