@@ -110,7 +110,7 @@ exports.updateUser = async (req, res) => {
     phoneNumber,
     state,
     company,
-    Role,
+    role,
     address,
     zipCode,
     imageUrl,
@@ -127,7 +127,7 @@ exports.updateUser = async (req, res) => {
   if (zipCode !== undefined) data.zipCode = zipCode;
   if (imageUrl !== undefined) data.imageUrl = imageUrl;
   if (company !== undefined) data.company = company;
-  if (Role !== undefined) data.Role = Role;
+  if (role !== undefined) data.role = role;
 
   try {
     const user = await prisma.user.update({
@@ -143,7 +143,7 @@ exports.updateUser = async (req, res) => {
         zipCode: true,
         imageUrl: true,
         company: true,
-        Role: true,
+        role: true,
       },
     });
 
