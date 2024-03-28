@@ -1,7 +1,5 @@
 const { prisma } = require("../db");
 
-// const GoogleStrategy = require("passport-google-oauth20").Strategy;
-// const passport = require("passport");
 const { oAuth2Client } = require("../services/GoogleAuth");
 const {
   signToken,
@@ -67,6 +65,7 @@ exports.signup = async (req, res) => {
         role: true,
         updatedAt: true,
         password: false,
+        isPaidUser: true,
       },
     });
 
@@ -142,6 +141,7 @@ exports.oauthGoogleLogin = async (req, res) => {
       company: true,
       role: true,
       updatedAt: true,
+      isPaidUser: true,
       password: false, // Exclude password
     },
   });
@@ -170,6 +170,7 @@ exports.oauthGoogleLogin = async (req, res) => {
         address: true,
         zipCode: true,
         company: true,
+        isPaidUser: true,
         role: true,
         updatedAt: true,
         password: false, // Exclude password

@@ -83,7 +83,10 @@ exports.getUser = async (req, res) => {
         zipCode: true,
         company: true,
         role: true,
+        isPaidUser: true,
         updatedAt: true,
+        organizationMember: true, 
+        organizationLead: true,
         password: false, // Exclude password
       },
     });
@@ -114,6 +117,7 @@ exports.updateUser = async (req, res) => {
     address,
     zipCode,
     imageUrl,
+    isPaidUser,
   } = req.body;
 
   const data = {};
@@ -128,6 +132,7 @@ exports.updateUser = async (req, res) => {
   if (imageUrl !== undefined) data.imageUrl = imageUrl;
   if (company !== undefined) data.company = company;
   if (role !== undefined) data.role = role;
+  if (isPaidUser !== undefined) data.isPaidUser = isPaidUser;
 
   try {
     const user = await prisma.user.update({
@@ -144,6 +149,7 @@ exports.updateUser = async (req, res) => {
         imageUrl: true,
         company: true,
         role: true,
+        isPaidUser: true,
       },
     });
 
