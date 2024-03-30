@@ -14,48 +14,53 @@ datasource db {
 }
 
 model User {
-  id                 String         @id @default(uuid())
-  email              String         @unique
-  password           String?
-  name               String?
-  username           String?        @unique
-  boards             Board[]
-  comments           Comment[]
-  imageUrl           String?
-  createdAt          DateTime       @default(now())
-  phoneNumber        String?
-  state              String?
-  address            String?
-  zipCode            String?
-  company            String?
-  isPaidUser         Boolean?       @default(false)
-  role               String?
-  updatedAt          DateTime       @updatedAt
-  organizationMember Organization[] @relation("members")
-  organizationLead   Organization?  @relation("teamLead")
+  id                   String         @id @default(uuid())
+  email                String         @unique
+  password             String?
+  name                 String?
+  username             String?        @unique
+  boards               Board[]
+  comments             Comment[]
+  imageUrl             String?
+  createdAt            DateTime       @default(now())
+  phoneNumber          String?
+  state                String?
+  address              String?
+  zipCode              String?
+  company              String?
+  isPaidUser           Boolean?       @default(false)
+  role                 String?
+  updatedAt            DateTime       @updatedAt
+  organizationMember   Organization[] @relation("members")
+  organizationLead     Organization[] @relation("teamLeads")
+  receivedNotification Notification[] @relation("receiver")
+  sentNotification     Notification[] @relation("sender")
 }
 
 model Organization {
   id         String   @id @default(uuid())
   name       String
-  teamLead   User     @relation("teamLead", fields: [teamLeadId], references: [id])
-  teamLeadId String   @unique
+  teamLead   User     @relation("teamLeads", fields: [teamLeadId], references: [id])
+  teamLeadId String
   members    User[]   @relation("members")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  boards     Board[]
 }
 
 model Board {
-  id            Int      @id @default(autoincrement())
-  title         String
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  columns       Column[]
-  imageId       String
-  imageThumbUrl String
-  imageFullUrl  String
-  imageLinkHTML String
-  imageUserName String
+  id             Int           @id @default(autoincrement())
+  title          String
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  organizationId String? // New field
+  organization   Organization? @relation(fields: [organizationId], references: [id]) // New field
+  columns        Column[]
+  imageId        String
+  imageThumbUrl  String
+  imageFullUrl   String
+  imageLinkHTML  String
+  imageUserName  String
 }
 
 model Column {
@@ -101,4 +106,20 @@ model Label {
   cardId    Int
   card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   createdAt DateTime @default(now())
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  senderId   String
+  sender     User     @relation("sender", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("receiver", fields: [receiverId], references: [id])
+  message    Message
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum Message {
+  JOIN
+  LEAVE
 }

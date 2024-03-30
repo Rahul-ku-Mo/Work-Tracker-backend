@@ -6,10 +6,11 @@ const router = express.Router();
 
 router.use(authenticateToken);
 
-router.route("/").post(organizationController.createOrganization);
+router.route("/").post(organizationController.createOrganization).get(organizationController.getOrganizations)
 
 router
   .route("/:organizationId")
+  .get(organizationController.getOrganization)
   .patch(organizationController.assignMembersToOrganization);
 
 module.exports = router;

@@ -59,9 +59,32 @@ exports.createBoard = async (req, res) => {
       imageFullUrl,
       imageLinkHTML,
       imageUserName,
+      organizationId,
     } = req.body;
 
     const { userId } = req.user;
+
+    if (organizationId === undefined) {
+      const board = await prisma.board.create({
+        data: {
+          title,
+          imageId,
+          imageThumbUrl,
+          imageFullUrl,
+          imageLinkHTML,
+          imageUserName,
+          user: {
+            connect: { id: userId },
+          },
+        },
+      });
+
+      return res.status(201).json({
+        status: 201,
+        message: "Success",
+        data: board,
+      });
+    }
 
     const board = await prisma.board.create({
       data: {
@@ -71,6 +94,9 @@ exports.createBoard = async (req, res) => {
         imageFullUrl,
         imageLinkHTML,
         imageUserName,
+        organization: {
+          connect: { id: organizationId },
+        },
         user: {
           connect: { id: userId },
         },

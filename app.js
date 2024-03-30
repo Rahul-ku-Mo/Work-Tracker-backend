@@ -9,6 +9,7 @@ const columnRouter = require("./routes/columnRoutes");
 const cardRouter = require("./routes/cardRoutes");
 const labelRouter = require("./routes/labelRoutes.js");
 const organizationRouter = require("./routes/organizationRoutes");
+const notificationRouter = require("./routes/notificationRoutes");
 
 const session = require("express-session");
 const passport = require("passport");
@@ -49,6 +50,7 @@ app.use("/api/v1/columns", columnRouter);
 app.use("/api/v1/cards", cardRouter);
 app.use("/api/v1/comments", commentRouter);
 app.use("/api/v1/organizations", organizationRouter);
+app.use("/api/v1/notifications", notificationRouter);
 
 app.use("/api/v1/labels", labelRouter);
 

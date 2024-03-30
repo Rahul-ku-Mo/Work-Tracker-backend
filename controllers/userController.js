@@ -16,22 +16,18 @@ exports.checkUserExists = async (req, res, next) => {
 };
 
 exports.getUsers = async (req, res) => {
+  const { userId } = req.user;
   try {
     const users = await prisma.user.findMany({
-      include: {
-        boards: {
-          include: {
-            columns: {
-              include: {
-                cards: {
-                  include: {
-                    comments: true,
-                  },
-                },
-              },
-            },
-          },
+      where: {
+        id: {
+          not: userId,
         },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
       },
     });
 
@@ -85,8 +81,15 @@ exports.getUser = async (req, res) => {
         role: true,
         isPaidUser: true,
         updatedAt: true,
-        organizationMember: true, 
-        organizationLead: true,
+        organizationMember: true,
+        organizationLead: {
+          select: {
+            name: true,
+            id: true,
+            teamLeadId: true,
+            members: true,
+          },
+        },
         password: false, // Exclude password
       },
     });

@@ -9,9 +9,9 @@ router
   .post("/signup", authController.signup)
   .post("/login", authController.login);
 
-router.route("/").get(userController.getUsers);
-
 router.use(authenticateToken);
+
+router.route("/").get(userController.getUsers);
 
 router.route("/me").get(userController.getUser).patch(userController.updateUser);
 
