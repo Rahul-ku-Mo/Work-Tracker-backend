@@ -125,6 +125,7 @@ exports.getOrganization = async (req, res) => {
             role: true,
           },
         },
+        boards: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -142,7 +143,7 @@ exports.getOrganization = async (req, res) => {
   }
 };
 
-exports.getOrganizations = async (req, res) => {
+exports.getOrganizationsByMember = async (req, res) => {
   const { userId } = req.user;
   try {
     const organizations = await prisma.organization.findMany({
@@ -152,6 +153,50 @@ exports.getOrganizations = async (req, res) => {
             id: userId,
           },
         },
+      },
+      select: {
+        id: true,
+        name: true,
+        teamLead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            company: true,
+            role: true,
+          },
+        },
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            company: true,
+            role: true,
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: organizations,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: error.message,
+    });
+  }
+};
+exports.getOrganizationsByLead = async (req, res) => {
+  const { userId } = req.user;
+  try {
+    const organizations = await prisma.organization.findMany({
+      where: {
+        teamLeadId: userId,
       },
       select: {
         id: true,

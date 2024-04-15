@@ -64,7 +64,7 @@ exports.createBoard = async (req, res) => {
 
     const { userId } = req.user;
 
-    if (organizationId === undefined) {
+    if (organizationId === undefined || organizationId === "") {
       const board = await prisma.board.create({
         data: {
           title,

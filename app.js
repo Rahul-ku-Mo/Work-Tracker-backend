@@ -1,5 +1,6 @@
 const express = require("express");
 const { rateLimiterMiddleware } = require("./middleware/RateLimiterRedis");
+const { authenticatePusher } = require("./middleware/pusherAuth");
 
 const userRouter = require("./routes/userRoutes");
 const boardRouter = require("./routes/boardRoutes");
@@ -44,6 +45,8 @@ app.use(passport.session());
 
 app.use("/api/v1", authRouter);
 
+app.use("/api/v1/pusher/auth", authenticatePusher);
+
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/boards", boardRouter);
 app.use("/api/v1/columns", columnRouter);
@@ -51,7 +54,6 @@ app.use("/api/v1/cards", cardRouter);
 app.use("/api/v1/comments", commentRouter);
 app.use("/api/v1/organizations", organizationRouter);
 app.use("/api/v1/notifications", notificationRouter);
-
 app.use("/api/v1/labels", labelRouter);
 
 app.listen(port, () => {

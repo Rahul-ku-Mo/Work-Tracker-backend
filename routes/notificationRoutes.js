@@ -11,5 +11,4 @@ router.route("/").get(notificationController.getNotifications);
 router.route("/invite").post(notificationController.createInviteNotification);
 
 
-
 module.exports = router;

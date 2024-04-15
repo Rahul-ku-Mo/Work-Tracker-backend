@@ -6,7 +6,10 @@ const router = express.Router();
 
 router.use(authenticateToken);
 
-router.route("/").post(organizationController.createOrganization).get(organizationController.getOrganizations)
+router.route("/").post(organizationController.createOrganization)
+router.route("/members").get(organizationController.getOrganizationsByMember);
+router.route("/leads").get(organizationController.getOrganizationsByLead);
+
 
 router
   .route("/:organizationId")

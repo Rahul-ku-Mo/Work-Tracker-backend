@@ -1,5 +1,5 @@
 const { prisma } = require("../db");
-const { pusher } = require("../services/pusherServer");
+const { pusherServer } = require("../services/pusherServer");
 
 exports.getNotifications = async (req, res) => {
   const { userId } = req.user;
@@ -8,6 +8,9 @@ exports.getNotifications = async (req, res) => {
     const notifications = await prisma.notification.findMany({
       where: {
         receiverId: userId,
+      },
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
@@ -20,7 +23,6 @@ exports.getNotifications = async (req, res) => {
     console.log(error);
   }
 };
-
 
 exports.createInviteNotification = async (req, res) => {
   const { userId: senderId } = req.user;
@@ -58,8 +60,8 @@ exports.createInviteNotification = async (req, res) => {
       },
     });
 
-    await pusher.trigger(`invite-${receiverId}`, "invite-notification", {
-      message: notification,
+    await pusherServer.trigger("notification", `invite:${receiverId}`, {
+      notification,
     });
 
     res.status(201).json({
@@ -67,10 +69,7 @@ exports.createInviteNotification = async (req, res) => {
       message: "Success",
       data: notification,
     });
-
   } catch (error) {
     console.log(error);
   }
 };
-
-
