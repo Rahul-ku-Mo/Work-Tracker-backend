@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,92 +7,146 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// User roles as enum
+enum Role {
+  ADMIN
+  TEAM_MEMBER
+  TEAM_LEAD
+}
+
+enum STATUS {
+  ONLINE
+  OFFLINE
+}
+
+// User model
 model User {
-  id                   String         @id @default(uuid())
-  email                String         @unique
-  password             String?
-  name                 String?
-  username             String?        @unique
-  boards               Board[]
-  comments             Comment[]
-  imageUrl             String?
-  createdAt            DateTime       @default(now())
-  phoneNumber          String?
-  state                String?
-  address              String?
-  zipCode              String?
-  company              String?
-  isPaidUser           Boolean?       @default(false)
-  role                 String?
-  updatedAt            DateTime       @updatedAt
-  organizationMember   Organization[] @relation("members")
-  organizationLead     Organization[] @relation("teamLeads")
-  receivedNotification Notification[] @relation("receiver")
-  sentNotification     Notification[] @relation("sender")
+  id             String        @id @default(uuid())
+  email          String        @unique
+  password       String
+  name           String
+  imageUrl       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  role           Role
+  payments       Payment?
+  userStatus     UserStatus
+  Organization   Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?
+  team           Team[]        @relation(fields: [teamId], references: [id])
+  teamId         String? //Admin can be a team lead
 }
 
-model Organization {
-  id         String   @id @default(uuid())
-  name       String
-  teamLead   User     @relation("teamLeads", fields: [teamLeadId], references: [id])
-  teamLeadId String
-  members    User[]   @relation("members")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  boards     Board[]
-}
-
-model Board {
-  id             Int           @id @default(autoincrement())
-  title          String
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  organizationId String? // New field
-  organization   Organization? @relation(fields: [organizationId], references: [id]) // New field
-  columns        Column[]
-  imageId        String
-  imageThumbUrl  String
-  imageFullUrl   String
-  imageLinkHTML  String
-  imageUserName  String
-}
-
-model Column {
-  id        Int      @id @default(autoincrement())
-  order     Int
-  title     String
-  boardId   Int
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  cards     Card[]
+model UserStatus {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  status    STATUS
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Card {
-  id          Int       @id @default(autoincrement())
-  title       String
-  order       Int
-  description String?
-  columnId    Int
-  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  comments    Comment[]
-  labels      Label[]
-  attachments String[]
-  createdAt   DateTime  @default(now())
-  dueDate     DateTime?
-  updatedAt   DateTime  @updatedAt
+// Organization model
+model Organization {
+  id            String      @id @default(uuid())
+  name          String
+  buyer         User        @relation(fields: [buyerId], references: [id])
+  buyerId       String
+  teams         Team[]
+  pricingPlanId String
+  pricingPlan   PricingPlan @relation(fields: [pricingPlanId], references: [id])
 }
 
-model Comment {
-  id        Int      @id @default(autoincrement())
-  content   String
-  cardId    Int
-  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  teamLead    User     @relation("teamLeads", fields: [teamLeadId], references: [id])
+  teamLeadId  String
+  teamMembers User[]   @relation("members")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Board model
+model Kanban {
+  id            String         @id @default(uuid())
+  name          String
+  userId        String //user who created the kanban board(team_lead)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  teamId        String
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  progression   Progression[]
+  imageId       String
+  imageThumbUrl String
+  imageFullUrl  String
+  imageLinkHTML String
+  imageUserName String
+  ActivityLog   ActivityLog[]
+  videoMeetings VideoMeeting[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// Column model
+model Progression {
+  id        String   @id @default(uuid())
+  name      String
+  tickets   Ticket[]
+  KanbanId  String
+  Kanban    Kanban   @relation(fields: [KanbanId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
+// Card model (Updated to include activity logs and meetings)
+model Ticket {
+  id            Int           @id @default(autoincrement())
+  name          String
+  description   String?
+  ProgressionId String
+  Progression   Progression   @relation(fields: [ProgressionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  assignee      User?         @relation("assignee")
+  dueDate       DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  label         Label[]
+  connection    Connection[]
+  attachments   String[]
+  // videoMeetings videoMeetings
+}
+
+model Connection {
+  id       String @id @default(uuid())
+  githubId String
+  googleId String
+  gitlabId String
+}
+
+// // Comment model (Updated to include audio support)
+// model Comment {
+//   id        Int      @id @default(autoincrement())
+//   content   String?
+//   audioUrl  String? // URL for storing audio comments
+//   cardId    Int
+//   card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+//   userId    String
+//   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+//   createdAt DateTime @default(now())
+// }
+
+// Activity Log model to track all changes made on a card (updates, etc.)
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  cardId      Int
+  card        Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  action      String // Describe the action, e.g., "Updated description", "Moved card", etc.
+  performedBy String // User ID of who performed the action
+  createdAt   DateTime @default(now())
+  Board       Board?   @relation(fields: [boardId], references: [id])
+  boardId     Int?
+}
+
+// Label model
 model Label {
   id        Int      @id @default(autoincrement())
   name      String
@@ -108,18 +156,39 @@ model Label {
   createdAt DateTime @default(now())
 }
 
-model Notification {
-  id         Int      @id @default(autoincrement())
-  senderId   String
-  sender     User     @relation("sender", fields: [senderId], references: [id])
-  receiverId String
-  receiver   User     @relation("receiver", fields: [receiverId], references: [id])
-  message    Message
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+// Video Meeting model to store information about meetings and transcripts
+model VideoMeeting {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int
+  ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  participants  User[]   @relation("videoMeetingParticipants")
+  meetingUrl    String // URL of the video meeting
+  transcriptUrl String? // URL of the transcript file
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
-enum Message {
-  JOIN
-  LEAVE
+// Pricing Plan model
+model PricingPlan {
+  id           String         @id @default(uuid())
+  name         String
+  teamSize     Int
+  price        Float
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  Organization Organization[]
+}
+
+// Payment model
+model Payment {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  amount         Float
+  paymentDate    DateTime     @default(now())
+  status         String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
