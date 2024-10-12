@@ -5,7 +5,8 @@
   "main": "app.js",
   "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon app.js"
   },
   "author": "Rahul K.M",
   "license": "ISC",
@@ -23,8 +24,7 @@
     "pg": "^8.11.3",
     "pusher": "^5.2.0",
     "rate-limiter-flexible": "^5.0.0",
-    "redis": "^4.6.13",
-    "work-tracker-backend": "file:"
+    "redis": "^4.6.13"
   },
   "devDependencies": {
     "prisma": "^5.11.0"
