@@ -12,13 +12,13 @@ const labelRouter = require("./routes/labelRoutes.js");
 const organizationRouter = require("./routes/organizationRoutes");
 const notificationRouter = require("./routes/notificationRoutes");
 
-const session = require("express-session");
+const session = require("cookie-session");
 const passport = require("passport");
 
 const app = express();
 const cors = require("cors");
 
-const port = 8000 || process.env.PORT;
+const port = process.env.PORT;
 
 app.use(
   cors({
