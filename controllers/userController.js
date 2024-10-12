@@ -1,4 +1,14 @@
-const { prisma, client } = require("../db");
+const { prisma, client: redisClient } = require("../db");
+
+// Helper function to safely interact with Redis
+async function safeRedisOperation(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    console.error("Redis operation failed:", error);
+    return null;
+  }
+}
 
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
@@ -18,6 +28,19 @@ exports.checkUserExists = async (req, res, next) => {
 exports.getUsers = async (req, res) => {
   const { userId } = req.user;
   try {
+    const cacheKey = `USERS::${userId}`;
+    const cachedUsers = await safeRedisOperation(() =>
+      redisClient.get(cacheKey)
+    );
+
+    if (cachedUsers) {
+      return res.status(200).json({
+        status: 200,
+        message: "Success (from cache)",
+        data: JSON.parse(cachedUsers),
+      });
+    }
+
     const users = await prisma.user.findMany({
       where: {
         id: {
@@ -31,13 +54,18 @@ exports.getUsers = async (req, res) => {
       },
     });
 
+    await safeRedisOperation(() =>
+      redisClient.set(cacheKey, JSON.stringify(users), { EX: 3600 })
+    );
+
     res.status(200).json({
       status: 200,
       message: "Success",
       data: users,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
@@ -51,13 +79,14 @@ exports.getUser = async (req, res) => {
     });
   }
 
-  const value = await client.get(`userId:${userId}`);
+  const cacheKey = `USER::${userId}`;
+  const cachedUser = await safeRedisOperation(() => redisClient.get(cacheKey));
 
-  if (value) {
+  if (cachedUser) {
     return res.status(200).json({
       status: 200,
-      message: "Success",
-      data: JSON.parse(value),
+      message: "Success (from cache)",
+      data: JSON.parse(cachedUser),
     });
   }
 
@@ -73,8 +102,8 @@ exports.getUser = async (req, res) => {
         comments: true,
         imageUrl: true,
         createdAt: true,
-        phoneNumber: true,
         state: true,
+        phoneNumber: true,
         address: true,
         zipCode: true,
         company: true,
@@ -90,12 +119,13 @@ exports.getUser = async (req, res) => {
             members: true,
           },
         },
-        password: false, // Exclude password
       },
     });
 
     if (user) {
-      await client.set(`userId:${userId}`, JSON.stringify(user));
+      await safeRedisOperation(() =>
+        redisClient.set(cacheKey, JSON.stringify(user), { EX: 3600 })
+      );
     }
 
     res.status(200).json({
@@ -104,7 +134,8 @@ exports.getUser = async (req, res) => {
       data: user,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
@@ -114,28 +145,27 @@ exports.updateUser = async (req, res) => {
   const {
     name,
     phoneNumber,
-    state,
     company,
     role,
+    state,
     address,
     zipCode,
     imageUrl,
     isPaidUser,
   } = req.body;
 
-  const data = {};
-
-  data.updatedAt = new Date(Date.now());
-
-  if (name !== undefined) data.name = name;
-  if (phoneNumber !== undefined) data.phoneNumber = phoneNumber;
-  if (state !== undefined) data.state = state;
-  if (address !== undefined) data.address = address;
-  if (zipCode !== undefined) data.zipCode = zipCode;
-  if (imageUrl !== undefined) data.imageUrl = imageUrl;
-  if (company !== undefined) data.company = company;
-  if (role !== undefined) data.role = role;
-  if (isPaidUser !== undefined) data.isPaidUser = isPaidUser;
+  const data = {
+    updatedAt: new Date(Date.now()),
+    ...(name !== undefined && { name }),
+    ...(phoneNumber !== undefined && { phoneNumber }),
+    ...(address !== undefined && { address }),
+    ...(imageUrl !== undefined && { imageUrl }),
+    ...(company !== undefined && { company }),
+    ...(zipCode !== undefined && { zipCode }),
+    ...(role !== undefined && { role }),
+    ...(isPaidUser !== undefined && { isPaidUser }),
+    ...(state !== undefined && { state }),
+  };
 
   try {
     const user = await prisma.user.update({
@@ -146,8 +176,8 @@ exports.updateUser = async (req, res) => {
         name: true,
         email: true,
         phoneNumber: true,
-        state: true,
         address: true,
+        state: true,
         zipCode: true,
         imageUrl: true,
         company: true,
@@ -156,7 +186,10 @@ exports.updateUser = async (req, res) => {
       },
     });
 
-    await client.set(`userId:${userId}`, JSON.stringify(user));
+    const cacheKey = `USER::${userId}`;
+    await safeRedisOperation(() =>
+      redisClient.set(cacheKey, JSON.stringify(user), { EX: 3600 })
+    );
 
     res.status(200).json({
       status: 200,
@@ -164,6 +197,7 @@ exports.updateUser = async (req, res) => {
       data: user,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };

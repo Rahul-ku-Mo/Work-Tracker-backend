@@ -23,7 +23,8 @@
     "pg": "^8.11.3",
     "pusher": "^5.2.0",
     "rate-limiter-flexible": "^5.0.0",
-    "redis": "^4.6.13"
+    "redis": "^4.6.13",
+    "work-tracker-backend": "file:"
   },
   "devDependencies": {
     "prisma": "^5.11.0"
