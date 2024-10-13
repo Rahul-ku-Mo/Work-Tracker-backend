@@ -105,6 +105,7 @@ exports.getUser = async (req, res) => {
         state: true,
         phoneNumber: true,
         address: true,
+        department: true,
         zipCode: true,
         company: true,
         role: true,
@@ -148,6 +149,7 @@ exports.updateUser = async (req, res) => {
     company,
     role,
     state,
+    department,
     address,
     zipCode,
     imageUrl,
@@ -156,16 +158,19 @@ exports.updateUser = async (req, res) => {
 
   const data = {
     updatedAt: new Date(Date.now()),
-    ...(name !== undefined && { name }),
-    ...(phoneNumber !== undefined && { phoneNumber }),
-    ...(address !== undefined && { address }),
-    ...(imageUrl !== undefined && { imageUrl }),
-    ...(company !== undefined && { company }),
-    ...(zipCode !== undefined && { zipCode }),
-    ...(role !== undefined && { role }),
-    ...(isPaidUser !== undefined && { isPaidUser }),
-    ...(state !== undefined && { state }),
   };
+
+  // Only add fields to the data object if they are provided and not null/undefined
+  if (name != null) data.name = name;
+  if (phoneNumber != null) data.phoneNumber = phoneNumber;
+  if (company != null) data.company = company;
+  if (role != null) data.role = role;
+  if (state != null) data.state = state;
+  if (department != null) data.department = department;
+  if (address != null) data.address = address;
+  if (zipCode != null) data.zipCode = zipCode;
+  if (imageUrl != null) data.imageUrl = imageUrl;
+  if (isPaidUser != null) data.isPaidUser = isPaidUser;
 
   try {
     const user = await prisma.user.update({
@@ -176,8 +181,10 @@ exports.updateUser = async (req, res) => {
         name: true,
         email: true,
         phoneNumber: true,
+        username: true,
         address: true,
         state: true,
+        department: true,
         zipCode: true,
         imageUrl: true,
         company: true,

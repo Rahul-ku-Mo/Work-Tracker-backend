@@ -28,6 +28,7 @@ model User {
   address              String?
   zipCode              String?
   company              String?
+  department           String?
   isPaidUser           Boolean?       @default(false)
   role                 String?
   updatedAt            DateTime       @updatedAt
