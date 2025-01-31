@@ -1,10 +1,10 @@
 const { prisma } = require("../db");
 
-exports.createCard = async (req, res) => {
+const createCard = async (req, res) => {
   const { columnId } = req.query;
 
   try {
-    const { title } = req.body;
+    const { title, description, labels, attachments, dueDate } = req.body;
 
     const lastCard = await prisma.card.findFirst({
       where: { columnId: parseInt(columnId) },
@@ -19,6 +19,10 @@ exports.createCard = async (req, res) => {
     const card = await prisma.card.create({
       data: {
         title: title,
+        description: description,
+        labels: labels,
+        attachments: attachments,
+        dueDate: dueDate,
         order: newOrder,
         column: {
           connect: {
@@ -38,15 +42,17 @@ exports.createCard = async (req, res) => {
   }
 };
 
-exports.updateCard = async (req, res) => {
+const updateCard = async (req, res) => {
   const { cardId } = req.params;
-  const { title, description, columnId, labels, attachments, dueDate, order } =
+  const { title, description, columnId, labels, attachments, dueDate, order, priority, assigneeId } =
     req.body;
 
   try {
     const data = {};
     if (title !== undefined) data.title = title;
     if (order !== undefined) data.order = order;
+    if (priority !== undefined) data.priority = priority;
+    if (assigneeId !== undefined) data.assigneeId = assigneeId;
     if (description !== undefined) data.description = description;
     if (columnId !== undefined) data.columnId = parseInt(columnId);
     if (labels !== undefined) data.labels = labels;
@@ -72,7 +78,7 @@ exports.updateCard = async (req, res) => {
   }
 };
 
-exports.getCards = async (req, res) => {
+const getCards = async (req, res) => {
   const { columnId } = req.query;
 
   try {
@@ -95,7 +101,7 @@ exports.getCards = async (req, res) => {
   }
 };
 
-exports.getCard = async (req, res) => {
+const getCard = async (req, res) => {
   const { cardId } = req.params;
 
   try {
@@ -118,7 +124,7 @@ exports.getCard = async (req, res) => {
   }
 };
 
-exports.deleteCard = async (req, res) => {
+const deleteCard = async (req, res) => {
   const { cardId } = req.params;
 
   try {
@@ -135,4 +141,45 @@ exports.deleteCard = async (req, res) => {
   } catch (error) {
     console.log(error);
   }
+};
+
+const getCardDetails = async (req, res) => {
+  const { cardId } = req.params;
+
+  try {
+    const card = await prisma.card.findUnique({
+      where: {
+        id: parseInt(cardId),
+      },
+    });
+
+    if (!card) {
+      return res.status(404).json({
+        status: 404,
+        message: "Card not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: 200,
+      message: "success", 
+      data: card,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      status: 500,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  getCardDetails,
+  createCard,
+  updateCard,
+  getCards,
+  getCard,
+  deleteCard,
 };

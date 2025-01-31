@@ -14,7 +14,8 @@ router.use(userController.checkUserExists);
 router
   .route("/")
   .get(boardController.getBoards)
-  .post(boardController.createBoard);
+  .post(boardController.createBoard)
+  .patch(boardController.updateBoard);
 
 router
   .route("/:boardId")

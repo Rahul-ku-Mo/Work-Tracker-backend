@@ -1,5 +1,5 @@
 const { prisma } = require("../db");
-
+const jwt = require("jsonwebtoken");
 const { oAuth2Client } = require("../services/GoogleAuth");
 const {
   signToken,
@@ -47,6 +47,7 @@ exports.signup = async (req, res) => {
         email: email,
         password: cryptPassword,
         username: username,
+        role: "ADMIN",
       },
       select: {
         id: true,
@@ -118,43 +119,17 @@ exports.login = async (req, res) => {
 };
 
 exports.oauthGoogleLogin = async (req, res) => {
-  const { tokens } = await oAuth2Client.getToken(req.body.code);
-  const user = authenticateTokenFromGoogle(tokens.id_token);
+  try {
+    // Get the tokens from Google
+    const { tokens } = await oAuth2Client.getToken(req.body.code);
 
-  let existingUser = await prisma.user.findUnique({
-    where: {
-      email: user.email,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      username: true,
-      boards: true,
-      comments: true,
-      imageUrl: true,
-      createdAt: true,
-      phoneNumber: true,
-      state: true,
-      address: true,
-      zipCode: true,
-      company: true,
-      role: true,
-      updatedAt: true,
-      isPaidUser: true,
-      password: false, // Exclude password
-    },
-  });
+    // Authenticate the token to get user details
+    const user = authenticateTokenFromGoogle(tokens.id_token);
 
-  if (!existingUser) {
-    const username = `${user.name}_worktracker`; // Create username
-
-    existingUser = await prisma.user.create({
-      data: {
+    // Check if the user already exists
+    let existingUser = await prisma.user.findUnique({
+      where: {
         email: user.email,
-        imageUrl: user.picture,
-        name: user.name,
-        username: username,
       },
       select: {
         id: true,
@@ -170,17 +145,84 @@ exports.oauthGoogleLogin = async (req, res) => {
         address: true,
         zipCode: true,
         company: true,
-        isPaidUser: true,
         role: true,
         updatedAt: true,
+        isPaidUser: true,
         password: false, // Exclude password
       },
     });
+
+    // If user does not exist, create a new user
+    if (!existingUser) {
+      const username = `${user.name}_worktracker`; // Create username
+
+      existingUser = await prisma.user.create({
+        data: {
+          email: user.email,
+          imageUrl: user.picture,
+          name: user.name,
+          username: username,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          username: true,
+          boards: true,
+          comments: true,
+          imageUrl: true,
+          createdAt: true,
+          phoneNumber: true,
+          state: true,
+          address: true,
+          zipCode: true,
+          company: true,
+          isPaidUser: true,
+          role: true,
+          updatedAt: true,
+          password: false, // Exclude password
+        },
+      });
+    }
+
+    // Create and send token
+    const accesstoken = this.createSendToken(existingUser, res);
+
+    return res
+      .status(200)
+      .json({ message: "success", data: existingUser, accesstoken });
+  } catch (error) {
+    console.error("Error during Google login:", error);
+    return res
+      .status(500)
+      .json({ message: "An error occurred during Google login." });
   }
+};
 
-  const accesstoken = this.createSendToken(existingUser, res);
+exports.verifyTokenAndRole = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(" ")[1];
 
-  return res
-    .status(200)
-    .json({ message: "success", data: existingUser, accesstoken });
+    if (!token) {
+      return res.status(401).json({ message: "No token found", data: null });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, async (err, decodedToken) => {
+      if (err) {
+        return res.status(403).json({ message: "Invalid or expired token", data: null });
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: decodedToken.userId },
+        select: {
+          role: true,
+        },
+      });
+
+      return res.status(200).json({ message: "success", data: user.role });
+    });
+  } catch (error) {
+    console.error("Error verifying token:", error);
+    return res.status(500).json({ message: "Error verifying token" });
+  }
 };

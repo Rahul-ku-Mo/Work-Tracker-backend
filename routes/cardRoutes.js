@@ -19,4 +19,6 @@ router
   .patch(cardController.updateCard)
   .delete(cardController.deleteCard);
 
+router.route("/details/:cardId").get(cardController.getCardDetails);
+
 module.exports = router;

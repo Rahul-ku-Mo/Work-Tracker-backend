@@ -2,7 +2,9 @@ const { prisma } = require("../db");
 
 exports.createLabel = async (req, res) => {
   const { cardId } = req.query;
-  const { name, color } = req.body;
+  const { name, color 
+    
+  } = req.body;
 
   try {
     const label = await prisma.label.create({
