@@ -27,8 +27,26 @@ exports.getBoards = async (req, res) => {
     }
 
     const boards = await prisma.board.findMany({
-      where: { userId },
-      include: { columns: true },
+      where: {
+        members: {
+          some: {
+            userId: userId,
+          },
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     await safeRedisOperation(() =>
@@ -71,23 +89,59 @@ exports.getBoard = async (req, res) => {
 
     const board = await prisma.board.findUnique({
       where: { id: parseInt(boardId) },
-      include: { columns: true },
+      include: {
+        columns: {
+          include: {
+            cards: {
+              include: {
+                labels: true,
+                assignees: {
+                  select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    if (board) {
-      await safeRedisOperation(() =>
-        redisClient.set(cacheKey, JSON.stringify(board), { EX: 3600 })
-      );
+    if (!board) {
+      return res.status(404).json({
+        status: "error",
+        message: "Board not found",
+      });
     }
 
+    await safeRedisOperation(() =>
+      redisClient.set(cacheKey, JSON.stringify(board), { EX: 3600 })
+    );
+
     res.status(200).json({
-      status: 200,
-      message: "Success",
+      status: "success",
       data: board,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ status: 500, message: "Internal Server Error" });
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch board",
+    });
   }
 };
 
@@ -100,36 +154,23 @@ exports.createBoard = async (req, res) => {
       imageFullUrl,
       imageLinkHTML,
       imageUserName,
-      organizationId,
     } = req.body;
 
     const { userId } = req.user;
 
-    if (organizationId === undefined || organizationId === "") {
-      const board = await prisma.board.create({
-        data: {
-          title,
-          imageId,
-          imageThumbUrl,
-          imageFullUrl,
-          imageLinkHTML,
-          imageUserName,
-          user: {
-            connect: { id: userId },
-          },
-        },
-      });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
 
-      // Invalidate the user's boards cache
-      await safeRedisOperation(() => redisClient.del(`BOARDS::${userId}`));
+    const role = user.role;
 
-      return res.status(201).json({
-        status: 201,
-        message: "Success",
-        data: board,
+    // Check if user is an admin
+    if (role !== "ADMIN") {
+      return res.status(403).json({
+        status: "error",
+        message: "Only administrators can create boards",
       });
     }
 
+    // Create board and make creator an admin
     const board = await prisma.board.create({
       data: {
         title,
@@ -138,16 +179,24 @@ exports.createBoard = async (req, res) => {
         imageFullUrl,
         imageLinkHTML,
         imageUserName,
-        organization: {
-          connect: { id: organizationId },
-        },
         user: {
           connect: { id: userId },
         },
+        members: {
+          create: {
+            userId: userId,
+            role: "ADMIN",
+          },
+        },
+      },
+      include: {
+        members: true,
       },
     });
 
-    res.status(201).json({
+    await safeRedisOperation(() => redisClient.del(`BOARDS::${userId}`));
+
+    return res.status(201).json({
       status: 201,
       message: "Success",
       data: board,
@@ -200,7 +249,7 @@ exports.updateBoard = async (req, res) => {
 
     res.status(200).json({
       status: 200,
-      message: "Success", 
+      message: "Success",
       data: board,
     });
   } catch (e) {
@@ -208,4 +257,3 @@ exports.updateBoard = async (req, res) => {
     res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
-

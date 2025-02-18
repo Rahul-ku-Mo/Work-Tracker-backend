@@ -26,23 +26,46 @@ exports.getNotifications = async (req, res) => {
 
 exports.createInviteNotification = async (req, res) => {
   const { userId: senderId } = req.user;
-
-  const { receiverId, message } = req.body;
+  const { receiverId, boardId } = req.body;
 
   try {
+    // Check if sender has admin access to the board
+    const senderAccess = await prisma.boardUser.findFirst({
+      where: {
+        boardId: parseInt(boardId),
+        userId: senderId,
+        role: "ADMIN",
+      },
+    });
+
+    if (!senderAccess) {
+      return res.status(403).json({
+        status: "error",
+        message: "Only board admins can send invites",
+      });
+    }
+
+    // Get board details for the notification message
+    const board = await prisma.board.findUnique({
+      where: { id: parseInt(boardId) },
+      select: { title: true },
+    });
+
     const notification = await prisma.notification.create({
       data: {
-        message,
+        message: "JOIN",
         sender: {
           connect: { id: senderId },
         },
         receiver: {
           connect: { id: receiverId },
         },
+        metadata: JSON.stringify({ boardId, boardTitle: board.title }),
       },
       select: {
         id: true,
         message: true,
+        metadata: true,
         sender: {
           select: {
             id: true,
@@ -65,11 +88,14 @@ exports.createInviteNotification = async (req, res) => {
     });
 
     res.status(201).json({
-      status: 201,
-      message: "Success",
+      status: "success",
       data: notification,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to create notification",
+    });
   }
 };

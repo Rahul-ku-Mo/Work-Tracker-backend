@@ -4,7 +4,8 @@ const createCard = async (req, res) => {
   const { columnId } = req.query;
 
   try {
-    const { title, description, labels, attachments, dueDate } = req.body;
+    const { title, description, labels, attachments, dueDate, assigneeIds } =
+      req.body;
 
     const lastCard = await prisma.card.findFirst({
       where: { columnId: parseInt(columnId) },
@@ -29,6 +30,16 @@ const createCard = async (req, res) => {
             id: parseInt(columnId),
           },
         },
+        assignees: assigneeIds
+          ? {
+              connect: assigneeIds.map((id) => ({ id })),
+            }
+          : undefined,
+      },
+      include: {
+        assignees: true,
+        comments: true,
+        labels: true,
       },
     });
 
@@ -39,38 +50,83 @@ const createCard = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
+    res.status(500).json({ message: err.message });
   }
 };
 
 const updateCard = async (req, res) => {
   const { cardId } = req.params;
-  const { title, description, columnId, labels, attachments, dueDate, order, priority, assigneeId } =
-    req.body;
+  const {
+    title,
+    description,
+    columnId,
+    labels,
+    attachments,
+    dueDate,
+    order,
+    priority,
+    assigneeId,
+  } = req.body;
 
   try {
-    const data = {};
-    if (title !== undefined) data.title = title;
-    if (order !== undefined) data.order = order;
-    if (priority !== undefined) data.priority = priority;
-    if (assigneeId !== undefined) data.assigneeId = assigneeId;
-    if (description !== undefined) data.description = description;
-    if (columnId !== undefined) data.columnId = parseInt(columnId);
-    if (labels !== undefined) data.labels = labels;
-    if (attachments !== undefined) data.attachments = attachments;
-    if (dueDate !== undefined) data.dueDate = new Date(dueDate);
-
-    const card = await prisma.card.update({
+    // First, get the current card data
+    const currentCard = await prisma.card.findUnique({
       where: { id: parseInt(cardId) },
-      data,
+    });
+
+    if (!currentCard) {
+      return res.status(404).json({
+        status: 404,
+        message: "Card not found",
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      title: title ?? currentCard.title,
+      description: description ?? currentCard.description,
+      columnId: columnId ? parseInt(columnId) : currentCard.columnId,
+      labels: labels ?? currentCard.labels,
+      attachments: attachments ?? currentCard.attachments,
+      dueDate: dueDate ? new Date(dueDate) : currentCard.dueDate,
+      order: order ?? currentCard.order,
+      priority: priority ?? currentCard.priority,
+      assignees: assigneeId ? { connect: { id: assigneeId } } : undefined,
+    };
+
+    // Update the card
+    const updatedCard = await prisma.card.update({
+      where: { id: parseInt(cardId) },
+      data: updateData,
       include: {
-        comments: true,
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
+        comments: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        labels: true,
       },
     });
 
-    res.status(201).json({
-      status: 201,
+    res.status(200).json({
+      status: 200,
       message: "Success",
-      data: card,
+      data: updatedCard,
     });
   } catch (error) {
     console.log(error);
@@ -162,7 +218,7 @@ const getCardDetails = async (req, res) => {
 
     return res.status(200).json({
       status: 200,
-      message: "success", 
+      message: "success",
       data: card,
     });
   } catch (error) {

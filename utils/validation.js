@@ -15,6 +15,8 @@ exports.validatePassword = async (clientPassword, databasePassword) => {
   return await bcrypt.compare(clientPassword, databasePassword);
 };
 
+
+
 exports.authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
 

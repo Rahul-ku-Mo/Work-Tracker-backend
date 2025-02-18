@@ -9,9 +9,9 @@ const commentRouter = require("./routes/commentRoutes");
 const columnRouter = require("./routes/columnRoutes");
 const cardRouter = require("./routes/cardRoutes");
 const labelRouter = require("./routes/labelRoutes.js");
-const organizationRouter = require("./routes/organizationRoutes");
-const notificationRouter = require("./routes/notificationRoutes");
 
+const notificationRouter = require("./routes/notificationRoutes");
+const { invalidateAllCaches } = require("./utils/cacheUtils");
 const session = require("cookie-session");
 const passport = require("passport");
 
@@ -52,10 +52,12 @@ app.use("/api/v1/boards", boardRouter);
 app.use("/api/v1/columns", columnRouter);
 app.use("/api/v1/cards", cardRouter);
 app.use("/api/v1/comments", commentRouter);
-app.use("/api/v1/organizations", organizationRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/labels", labelRouter);
 
 app.listen(port, () => {
   console.log(`Work-Tracker backend app listening on port ${port}`);
 });
+
+
+invalidateAllCaches();

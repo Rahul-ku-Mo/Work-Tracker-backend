@@ -13,7 +13,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
+enum AppRole {
   ADMIN
   USER
 }
@@ -24,7 +24,7 @@ model User {
   password             String?
   name                 String?
   username             String?        @unique
-  boards               Board[]
+  boards               BoardUser[] // Changed: Now connects through BoardUser
   comments             Comment[]
   imageUrl             String?
   createdAt            DateTime       @default(now())
@@ -35,40 +35,47 @@ model User {
   company              String?
   department           String?
   isPaidUser           Boolean?       @default(false)
-  role                 Role           @default(USER)
+  role                 AppRole        @default(USER)
   updatedAt            DateTime       @updatedAt
-  organizationMember   Organization[] @relation("members")
-  organizationLead     Organization[] @relation("teamLeads")
   receivedNotification Notification[] @relation("receiver")
   sentNotification     Notification[] @relation("sender")
   assignedCards        Card[]         @relation("assignee")
   createdCards         Card[]         @relation("cardCreator")
-}
-
-model Organization {
-  id         String   @id @default(uuid())
-  name       String
-  teamLead   User     @relation("teamLeads", fields: [teamLeadId], references: [id])
-  teamLeadId String
-  members    User[]   @relation("members")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  boards     Board[]
+  Board                Board[]
 }
 
 model Board {
-  id             Int           @id @default(autoincrement())
-  title          String
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  organizationId String? // New field
-  organization   Organization? @relation(fields: [organizationId], references: [id]) // New field
-  columns        Column[]
-  imageId        String
-  imageThumbUrl  String
-  imageFullUrl   String
-  imageLinkHTML  String
-  imageUserName  String
+  id            Int         @id @default(autoincrement())
+  title         String
+  userId        String // Creator of the board
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  members       BoardUser[] // New: Board members
+  columns       Column[]
+  imageId       String
+  imageThumbUrl String
+  imageFullUrl  String
+  imageLinkHTML String
+  imageUserName String
+}
+
+// New model to manage board access
+model BoardUser {
+  id        String    @id @default(uuid())
+  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId   Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      BoardRole @default(MEMBER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([boardId, userId])
+}
+
+// New enum for board-specific roles
+enum BoardRole {
+  ADMIN
+  MEMBER
 }
 
 model Column {
@@ -93,13 +100,12 @@ model Card {
   labels      Label[]
   attachments String[]
   priority    String?
-  assigneeId  String?
-  assignee    User?     @relation("assignee", fields: [assigneeId], references: [id])
+  assignees   User[]    @relation("assignee")
   createdAt   DateTime  @default(now())
   dueDate     DateTime?
   updatedAt   DateTime  @updatedAt
-  User        User?     @relation("cardCreator", fields: [userId], references: [id])
-  userId      String?
+  creator     User?     @relation("cardCreator", fields: [creatorId], references: [id])
+  creatorId   String?
 }
 
 model Comment {

@@ -27,8 +27,10 @@ exports.checkUserExists = async (req, res, next) => {
 
 exports.getUsers = async (req, res) => {
   const { userId } = req.user;
+  const { boardId } = req.query; // Optional: to filter out users already in a board
+
   try {
-    const cacheKey = `USERS::${userId}`;
+    const cacheKey = `USERS::${userId}${boardId ? `::board::${boardId}` : ""}`;
     const cachedUsers = await safeRedisOperation(() =>
       redisClient.get(cacheKey)
     );
@@ -41,18 +43,43 @@ exports.getUsers = async (req, res) => {
       });
     }
 
-    const users = await prisma.user.findMany({
-      where: {
-        id: {
-          not: userId,
+    let users;
+    if (boardId) {
+      // If boardId is provided, exclude users already in the board
+      users = await prisma.user.findMany({
+        where: {
+          id: { not: userId },
+          AND: {
+            NOT: {
+              boards: {
+                some: {
+                  boardId: parseInt(boardId),
+                },
+              },
+            },
+          },
         },
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          imageUrl: true,
+        },
+      });
+    } else {
+      // Regular user list
+      users = await prisma.user.findMany({
+        where: {
+          id: { not: userId },
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          imageUrl: true,
+        },
+      });
+    }
 
     await safeRedisOperation(() =>
       redisClient.set(cacheKey, JSON.stringify(users), { EX: 3600 })
@@ -72,7 +99,7 @@ exports.getUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
-  if (userId === null || userId === undefined) {
+  if (!userId) {
     return res.status(400).json({
       status: 400,
       message: "Invalid user ID",
@@ -98,8 +125,6 @@ exports.getUser = async (req, res) => {
         email: true,
         name: true,
         username: true,
-        boards: true,
-        comments: true,
         imageUrl: true,
         createdAt: true,
         state: true,
@@ -111,13 +136,15 @@ exports.getUser = async (req, res) => {
         role: true,
         isPaidUser: true,
         updatedAt: true,
-        organizationMember: true,
-        organizationLead: {
-          select: {
-            name: true,
-            id: true,
-            teamLeadId: true,
-            members: true,
+        boards: {
+          include: {
+            board: {
+              select: {
+                id: true,
+                title: true,
+                imageThumbUrl: true,
+              },
+            },
           },
         },
       },
