@@ -94,7 +94,7 @@ exports.getBoard = async (req, res) => {
           include: {
             cards: {
               include: {
-                labels: true,
+              
                 assignees: {
                   select: {
                     id: true,

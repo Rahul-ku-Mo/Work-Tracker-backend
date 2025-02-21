@@ -7,11 +7,7 @@ exports.getColumns = async (req, res) => {
     const columns = await prisma.column.findMany({
       where: { boardId: parseInt(boardId) },
       include: {
-        cards: {
-          include: {
-            labels: true,
-          },
-        },
+        cards: true,
       },
     });
 

@@ -1,23 +1,16 @@
 const express = require("express");
 const boardController = require("../controllers/boardController");
-const userController = require("../controllers/userController");
-const { authenticateToken } = require("../utils/validation");
+
 const boardUserController = require("../controllers/boardUserController");
 const { checkBoardAccess } = require("../middleware/boardAccess");
 
 const router = express.Router();
 
-// Apply the authenticateToken middleware to all routes
-router.use(authenticateToken);
-
-//middleware to check the user exist or not!
-router.use(userController.checkUserExists);
-
 // Public routes (no board access check needed)
 router
   .route("/")
   .get(boardController.getBoards)
-  .post( boardController.createBoard);
+  .post(boardController.createBoard);
 
 // Protected routes (need board access check)
 router.use("/:boardId", checkBoardAccess);

@@ -1,19 +1,10 @@
 const express = require("express");
 const { rateLimiterMiddleware } = require("./middleware/RateLimiterRedis");
 const { authenticatePusher } = require("./middleware/pusherAuth");
-
-const userRouter = require("./routes/userRoutes");
-const boardRouter = require("./routes/boardRoutes");
-const authRouter = require("./routes/authRoutes");
-const commentRouter = require("./routes/commentRoutes");
-const columnRouter = require("./routes/columnRoutes");
-const cardRouter = require("./routes/cardRoutes");
-const labelRouter = require("./routes/labelRoutes.js");
-
-const notificationRouter = require("./routes/notificationRoutes");
-const { invalidateAllCaches } = require("./utils/cacheUtils");
+const routes = require("./routes");
 const session = require("cookie-session");
 const passport = require("passport");
+const { invalidateAllCaches } = require("./utils/cacheUtils");
 
 const app = express();
 const cors = require("cors");
@@ -43,21 +34,14 @@ app.use(rateLimiterMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use("/api/v1", authRouter);
-
+// Pusher authentication route
 app.use("/api/v1/pusher/auth", authenticatePusher);
 
-app.use("/api/v1/users", userRouter);
-app.use("/api/v1/boards", boardRouter);
-app.use("/api/v1/columns", columnRouter);
-app.use("/api/v1/cards", cardRouter);
-app.use("/api/v1/comments", commentRouter);
-app.use("/api/v1/notifications", notificationRouter);
-app.use("/api/v1/labels", labelRouter);
+// All API routes
+app.use("/api/v1", routes);
 
 app.listen(port, () => {
   console.log(`Work-Tracker backend app listening on port ${port}`);
 });
 
-
-invalidateAllCaches();
+// invalidateAllCaches();

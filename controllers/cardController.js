@@ -39,7 +39,7 @@ const createCard = async (req, res) => {
       include: {
         assignees: true,
         comments: true,
-        labels: true,
+       
       },
     });
 
@@ -60,7 +60,7 @@ const updateCard = async (req, res) => {
     title,
     description,
     columnId,
-    labels,
+    label : newLabel,
     attachments,
     dueDate,
     order,
@@ -81,12 +81,23 @@ const updateCard = async (req, res) => {
       });
     }
 
+    let updatedLabels;
+    if (newLabel && currentCard.labels.includes(newLabel)) {
+      updatedLabels = currentCard.labels.filter((label) => label !== newLabel);
+    } else if (newLabel) {
+      updatedLabels = [...currentCard.labels, newLabel];
+    } else {
+      updatedLabels = currentCard.labels;
+    }
+
+    
+    console.log(dueDate);
     // Prepare update data
     const updateData = {
       title: title ?? currentCard.title,
       description: description ?? currentCard.description,
       columnId: columnId ? parseInt(columnId) : currentCard.columnId,
-      labels: labels ?? currentCard.labels,
+      labels: updatedLabels,
       attachments: attachments ?? currentCard.attachments,
       dueDate: dueDate ? new Date(dueDate) : currentCard.dueDate,
       order: order ?? currentCard.order,
@@ -107,19 +118,6 @@ const updateCard = async (req, res) => {
             imageUrl: true,
           },
         },
-        comments: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                imageUrl: true,
-              },
-            },
-          },
-        },
-        labels: true,
       },
     });
 
