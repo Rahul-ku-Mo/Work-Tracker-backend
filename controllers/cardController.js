@@ -90,8 +90,6 @@ const updateCard = async (req, res) => {
       updatedLabels = currentCard.labels;
     }
 
-    
-    console.log(dueDate);
     // Prepare update data
     const updateData = {
       title: title ?? currentCard.title,
