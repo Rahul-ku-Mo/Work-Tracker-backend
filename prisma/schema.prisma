@@ -46,17 +46,17 @@ model User {
 }
 
 model Board {
-  id            Int         @id @default(autoincrement())
-  title         String
-  userId        String // Creator of the board
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  members       BoardUser[] // New: Board members
-  columns       Column[]
-  imageId       String
-  imageThumbUrl String
-  imageFullUrl  String
-  imageLinkHTML String
-  imageUserName String
+  id          Int         @id @default(autoincrement())
+  title       String
+  userId      String // Creator of the board
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  members     BoardUser[] // New: Board members
+  columns     Column[]
+  colorId     String
+  colorValue  String
+  colorName   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 // New model to manage board access

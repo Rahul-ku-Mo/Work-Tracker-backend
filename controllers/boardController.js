@@ -94,7 +94,6 @@ exports.getBoard = async (req, res) => {
           include: {
             cards: {
               include: {
-              
                 assignees: {
                   select: {
                     id: true,
@@ -147,41 +146,16 @@ exports.getBoard = async (req, res) => {
 
 exports.createBoard = async (req, res) => {
   try {
-    const {
-      title,
-      imageId,
-      imageThumbUrl,
-      imageFullUrl,
-      imageLinkHTML,
-      imageUserName,
-    } = req.body;
-
+    const { title, colorId, colorValue, colorName } = req.body;
     const { userId } = req.user;
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-
-    const role = user.role;
-
-    // Check if user is an admin
-    if (role !== "ADMIN") {
-      return res.status(403).json({
-        status: "error",
-        message: "Only administrators can create boards",
-      });
-    }
-
-    // Create board and make creator an admin
     const board = await prisma.board.create({
       data: {
         title,
-        imageId,
-        imageThumbUrl,
-        imageFullUrl,
-        imageLinkHTML,
-        imageUserName,
-        user: {
-          connect: { id: userId },
-        },
+        colorId,
+        colorValue,
+        colorName,
+        userId, // Add userId directly since it's now required in schema
         members: {
           create: {
             userId: userId,

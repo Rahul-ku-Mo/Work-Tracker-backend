@@ -1,3 +1,5 @@
+
+require('dotenv').config();
 const express = require("express");
 const { rateLimiterMiddleware } = require("./middleware/RateLimiterRedis");
 const { authenticatePusher } = require("./middleware/pusherAuth");
@@ -9,7 +11,7 @@ const { invalidateAllCaches } = require("./utils/cacheUtils");
 const app = express();
 const cors = require("cors");
 
-const port = process.env.PORT;
+const port = process.env.PORT || 8000;
 
 app.use(
   cors({

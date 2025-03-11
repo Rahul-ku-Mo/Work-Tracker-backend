@@ -1,14 +1,4 @@
-const { prisma, client: redisClient } = require("../db");
-
-// Helper function to safely interact with Redis
-async function safeRedisOperation(operation) {
-  try {
-    return await operation();
-  } catch (error) {
-    console.error("Redis operation failed:", error);
-    return null;
-  }
-}
+const { prisma } = require("../db");
 
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
@@ -30,19 +20,6 @@ exports.getUsers = async (req, res) => {
   const { boardId } = req.query; // Optional: to filter out users already in a board
 
   try {
-    const cacheKey = `USERS::${userId}${boardId ? `::board::${boardId}` : ""}`;
-    const cachedUsers = await safeRedisOperation(() =>
-      redisClient.get(cacheKey)
-    );
-
-    if (cachedUsers) {
-      return res.status(200).json({
-        status: 200,
-        message: "Success (from cache)",
-        data: JSON.parse(cachedUsers),
-      });
-    }
-
     let users;
     if (boardId) {
       // If boardId is provided, exclude users already in the board
@@ -81,10 +58,6 @@ exports.getUsers = async (req, res) => {
       });
     }
 
-    await safeRedisOperation(() =>
-      redisClient.set(cacheKey, JSON.stringify(users), { EX: 3600 })
-    );
-
     res.status(200).json({
       status: 200,
       message: "Success",
@@ -103,17 +76,6 @@ exports.getUser = async (req, res) => {
     return res.status(400).json({
       status: 400,
       message: "Invalid user ID",
-    });
-  }
-
-  const cacheKey = `USER::${userId}`;
-  const cachedUser = await safeRedisOperation(() => redisClient.get(cacheKey));
-
-  if (cachedUser) {
-    return res.status(200).json({
-      status: 200,
-      message: "Success (from cache)",
-      data: JSON.parse(cachedUser),
     });
   }
 
@@ -142,19 +104,12 @@ exports.getUser = async (req, res) => {
               select: {
                 id: true,
                 title: true,
-                imageThumbUrl: true,
               },
             },
           },
         },
       },
     });
-
-    if (user) {
-      await safeRedisOperation(() =>
-        redisClient.set(cacheKey, JSON.stringify(user), { EX: 3600 })
-      );
-    }
 
     res.status(200).json({
       status: 200,
@@ -219,11 +174,6 @@ exports.updateUser = async (req, res) => {
         isPaidUser: true,
       },
     });
-
-    const cacheKey = `USER::${userId}`;
-    await safeRedisOperation(() =>
-      redisClient.set(cacheKey, JSON.stringify(user), { EX: 3600 })
-    );
 
     res.status(200).json({
       status: 200,
