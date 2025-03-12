@@ -1,12 +1,12 @@
 const { prisma } = require("../db");
 const jwt = require("jsonwebtoken");
-const { oAuth2Client } = require("../services/GoogleAuth");
 const {
   signToken,
   hashedPassword,
   validatePassword,
   authenticateTokenFromGoogle,
 } = require("../utils/validation");
+const axios = require("axios");
 
 exports.createSendToken = (user, res) => {
   const token = signToken(user.id);
@@ -119,17 +119,39 @@ exports.login = async (req, res) => {
 };
 
 exports.oauthGoogleLogin = async (req, res) => {
-  try {
-    // Get the tokens from Google
-    const { tokens } = await oAuth2Client.getToken(req.body.code);
+  const { code } = req.body;
 
-    // Authenticate the token to get user details
-    const user = authenticateTokenFromGoogle(tokens.id_token);
+  if (!code) {
+    return res.status(400).json({ message: "Authorization code is required" });
+  }
+
+  try {
+    // Exchange authorization code for tokens
+    const tokenResponse = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      {
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri:
+          process.env.GOOGLE_REDIRECT_URI ||
+          "http://localhost:5173/auth/google/callback",
+        grant_type: "authorization_code",
+      }
+    );
+
+    // Get Google user info
+    const { data: googleUser } = await axios.get(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      {
+        headers: { Authorization: `Bearer ${tokenResponse.data.access_token}` },
+      }
+    );
 
     // Check if the user already exists
     let existingUser = await prisma.user.findUnique({
       where: {
-        email: user.email,
+        email: googleUser.email,
       },
       select: {
         id: true,
@@ -154,13 +176,13 @@ exports.oauthGoogleLogin = async (req, res) => {
 
     // If user does not exist, create a new user
     if (!existingUser) {
-      const username = `${user.name}_worktracker`; // Create username
+      const username = `${googleUser.name}_worktracker`; // Create username
 
       existingUser = await prisma.user.create({
         data: {
-          email: user.email,
-          imageUrl: user.picture,
-          name: user.name,
+          email: googleUser.email,
+          imageUrl: googleUser.picture,
+          name: googleUser.name,
           username: username,
         },
         select: {
@@ -185,12 +207,13 @@ exports.oauthGoogleLogin = async (req, res) => {
       });
     }
 
-    // Create and send token
-    const accesstoken = this.createSendToken(existingUser, res);
-
-    return res
-      .status(200)
-      .json({ message: "success", data: existingUser, accesstoken });
+    // Create JWT token for our application
+    const access_token = this.createSendToken(existingUser, res);
+    
+    return res.status(200).json({
+      message: "success",
+      access_token,
+    });
   } catch (error) {
     console.error("Error during Google login:", error);
     return res
@@ -209,7 +232,9 @@ exports.verifyTokenAndRole = async (req, res) => {
 
     jwt.verify(token, process.env.JWT_SECRET, async (err, decodedToken) => {
       if (err) {
-        return res.status(403).json({ message: "Invalid or expired token", data: null });
+        return res
+          .status(403)
+          .json({ message: "Invalid or expired token", data: null });
       }
 
       const user = await prisma.user.findUnique({

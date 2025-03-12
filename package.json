@@ -13,6 +13,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@prisma/client": "^5.11.0",
+    "axios": "^1.8.3",
     "bcryptjs": "^2.4.3",
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
@@ -22,8 +23,6 @@
     "google-auth-library": "^9.7.0",
     "jsonwebtoken": "^9.0.2",
     "nodemon": "^3.1.0",
-    "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0",
     "pg": "^8.11.3",
     "pusher": "^5.2.0",
     "rate-limiter-flexible": "^5.0.0",

@@ -5,7 +5,6 @@ const { rateLimiterMiddleware } = require("./middleware/RateLimiterRedis");
 const { authenticatePusher } = require("./middleware/pusherAuth");
 const routes = require("./routes");
 const session = require("cookie-session");
-const passport = require("passport");
 const { invalidateAllCaches } = require("./utils/cacheUtils");
 
 const app = express();
@@ -31,10 +30,6 @@ app.use(
 
 // Apply rate limiting to all requests
 app.use(rateLimiterMiddleware);
-
-// Initialize Passport
-app.use(passport.initialize());
-app.use(passport.session());
 
 // Pusher authentication route
 app.use("/api/v1/pusher/auth", authenticatePusher);
