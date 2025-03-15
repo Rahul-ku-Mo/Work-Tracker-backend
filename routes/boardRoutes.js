@@ -1,5 +1,5 @@
 const express = require("express");
-const boardController = require("../controllers/boardController");
+const boardController = require("../controllers/board.controller");
 
 const boardUserController = require("../controllers/boardUserController");
 const { checkBoardAccess } = require("../middleware/boardAccess");

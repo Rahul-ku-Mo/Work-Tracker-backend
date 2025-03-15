@@ -1,31 +1,29 @@
-const { prisma, client: redisClient } = require("../db");
-
-// Helper function to safely interact with Redis
-async function safeRedisOperation(operation) {
-  try {
-    return await operation();
-  } catch (error) {
-    console.error("Redis operation failed:", error);
-    return null;
-  }
-}
+const { prisma } = require("../db");
 
 exports.getBoards = async (req, res) => {
   const { userId } = req.user;
-  const cacheKey = `BOARDS::${userId}`;
 
   try {
-    const cachedBoards = await safeRedisOperation(() =>
-      redisClient.get(cacheKey)
-    );
-    if (cachedBoards) {
+    // Find user's team
+    const team = await prisma.team.findFirst({
+      where: {
+        members: {
+          some: {
+            id: userId
+          }
+        }
+      }
+    });
+    
+    if (!team) {
       return res.status(200).json({
         status: 200,
-        message: "Success (from cache)",
-        data: JSON.parse(cachedBoards),
+        message: "No team found",
+        data: []
       });
     }
-
+    
+    // Get boards for this team that the user has access to
     const boards = await prisma.board.findMany({
       where: {
         members: {
@@ -49,10 +47,6 @@ exports.getBoards = async (req, res) => {
       },
     });
 
-    await safeRedisOperation(() =>
-      redisClient.set(cacheKey, JSON.stringify(boards), { EX: 3600 })
-    );
-
     res.status(200).json({
       status: 200,
       message: "Success",
@@ -66,27 +60,13 @@ exports.getBoards = async (req, res) => {
 
 exports.getBoard = async (req, res) => {
   const { boardId } = req.params;
-  const cacheKey = `BOARD::${boardId}`;
-
   if (!boardId) {
     return res.status(400).json({
       status: 400,
       message: "boardId is required",
     });
   }
-
   try {
-    const cachedBoard = await safeRedisOperation(() =>
-      redisClient.get(cacheKey)
-    );
-    if (cachedBoard) {
-      return res.status(200).json({
-        status: 200,
-        message: "Success (from cache)",
-        data: JSON.parse(cachedBoard),
-      });
-    }
-
     const board = await prisma.board.findUnique({
       where: { id: parseInt(boardId) },
       include: {
@@ -119,18 +99,12 @@ exports.getBoard = async (req, res) => {
         },
       },
     });
-
     if (!board) {
       return res.status(404).json({
         status: "error",
         message: "Board not found",
       });
     }
-
-    await safeRedisOperation(() =>
-      redisClient.set(cacheKey, JSON.stringify(board), { EX: 3600 })
-    );
-
     res.status(200).json({
       status: "success",
       data: board,
@@ -149,13 +123,40 @@ exports.createBoard = async (req, res) => {
     const { title, colorId, colorValue, colorName } = req.body;
     const { userId } = req.user;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    // Check if user is an admin
+    if (user.role !== "ADMIN") {
+      return res.status(403).json({
+        status: 403,
+        message: "Only administrators can create boards",
+      });
+    }
+    
+    // Check if user has a team as captain
+    const team = await prisma.team.findFirst({
+      where: {
+        captainId: userId
+      }
+    });
+    
+    if (!team) {
+      return res.status(400).json({
+        status: 400,
+        message: "You need to create a team first",
+      });
+    }
+
     const board = await prisma.board.create({
       data: {
         title,
         colorId,
         colorValue,
         colorName,
-        userId, // Add userId directly since it's now required in schema
+        userId,
         members: {
           create: {
             userId: userId,
@@ -167,8 +168,6 @@ exports.createBoard = async (req, res) => {
         members: true,
       },
     });
-
-    await safeRedisOperation(() => redisClient.del(`BOARDS::${userId}`));
 
     return res.status(201).json({
       status: 201,
@@ -183,17 +182,8 @@ exports.createBoard = async (req, res) => {
 
 exports.deleteBoard = async (req, res) => {
   const { boardId } = req.params;
-  const { userId } = req.user;
-
   try {
     await prisma.board.delete({ where: { id: parseInt(boardId) } });
-
-    // Invalidate caches
-    await Promise.all([
-      safeRedisOperation(() => redisClient.del(`BOARD::${boardId}`)),
-      safeRedisOperation(() => redisClient.del(`BOARDS::${userId}`)),
-    ]);
-
     res.status(204).json({
       status: 204,
       message: "Success",
@@ -207,24 +197,41 @@ exports.deleteBoard = async (req, res) => {
 exports.updateBoard = async (req, res) => {
   const { boardId } = req.params;
   const { title } = req.body;
-  const { userId } = req.user;
-
   try {
     const board = await prisma.board.update({
       where: { id: parseInt(boardId) },
       data: { title },
     });
-
-    // Invalidate caches
-    await Promise.all([
-      safeRedisOperation(() => redisClient.del(`BOARD::${boardId}`)),
-      safeRedisOperation(() => redisClient.del(`BOARDS::${userId}`)),
-    ]);
-
     res.status(200).json({
       status: 200,
       message: "Success",
       data: board,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+const createTeam = async (req, res) => {
+  const { name } = req.body;
+  const { userId } = req.user;
+  try {
+    const team = await prisma.team.create({
+      data: {
+        name,
+        members: {
+          create: {
+            userId,
+            role: "ADMIN",
+          },
+        },
+      },
+    });
+    res.status(201).json({
+      status: 201,
+      message: "Success",
+      data: team,
     });
   } catch (e) {
     console.error(e);

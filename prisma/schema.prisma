@@ -24,7 +24,7 @@ model User {
   password             String?
   name                 String?
   username             String?          @unique
-  boards               BoardUser[] // Changed: Now connects through BoardUser
+  boards               BoardUser[]
   comments             Comment[]
   imageUrl             String?
   createdAt            DateTime         @default(now())
@@ -43,6 +43,24 @@ model User {
   createdCards         Card[]           @relation("cardCreator")
   Board                Board[]
   AiConversation       AiConversation[]
+  
+  // Team relationship - a user belongs to one team
+  team                 Team?            @relation("TeamMembers", fields: [teamId], references: [id])
+  teamId               String?
+  
+  // Team captain relationship - a user can be captain of one team
+  captainOf            Team?            @relation("TeamCaptain")
+}
+
+model Team {
+  id         String    @id @default(uuid())
+  name       String
+  joinCode   String?   @unique // Optional: For invite functionality
+  members    User[]    @relation("TeamMembers")
+  captain    User      @relation("TeamCaptain", fields: [captainId], references: [id])
+  captainId  String    @unique // One captain per team
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
 
 model Board {

@@ -4,6 +4,7 @@ exports.checkBoardAccess = async (req, res, next) => {
   const { boardId } = req.params;
   const { userId } = req.user;
 
+
   try {
     const boardAccess = await prisma.boardUser.findFirst({
       where: {
@@ -11,6 +12,8 @@ exports.checkBoardAccess = async (req, res, next) => {
         userId: userId,
       },
     });
+
+    console.log("boardAccess", boardAccess);
 
     if (!boardAccess) {
       return res.status(403).json({
