@@ -184,6 +184,7 @@ exports.oauthGoogleLogin = async (req, res) => {
           imageUrl: googleUser.picture,
           name: googleUser.name,
           username: username,
+          role: "ADMIN",
         },
         select: {
           id: true,

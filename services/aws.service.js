@@ -26,9 +26,8 @@ const getObjectURL = async (key) => {
   return url;
 };
 
-const putObject = async (fileName, fileType) => {
-  const key = `uploads/${Date.now()}-${fileName}`;
-
+const putObject = async ( fileType, key) => {
+ 
   const command = new PutObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET,
     Key: key,
