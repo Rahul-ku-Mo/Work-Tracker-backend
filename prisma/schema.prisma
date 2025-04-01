@@ -50,17 +50,26 @@ model User {
   
   // Team captain relationship - a user can be captain of one team
   captainOf            Team?            @relation("TeamCaptain")
+  
+  // Analytics related fields and relations
+  timeEntries          TimeEntry[]
+  efficiency           Int?             // Efficiency score (0-100)
+  performanceMetrics   PerformanceMetric[] @relation("userMetrics")
 }
 
 model Team {
-  id         String    @id @default(uuid())
-  name       String
-  joinCode   String?   @unique // Optional: For invite functionality
-  members    User[]    @relation("TeamMembers")
-  captain    User      @relation("TeamCaptain", fields: [captainId], references: [id])
-  captainId  String    @unique // One captain per team
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id                 String             @id @default(uuid())
+  name               String
+  joinCode           String?            @unique // Optional: For invite functionality
+  members            User[]             @relation("TeamMembers")
+  captain            User               @relation("TeamCaptain", fields: [captainId], references: [id])
+  captainId          String             @unique // One captain per team
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  // Analytics related fields and relations
+  sprints            Sprint[]
+  performanceMetrics PerformanceMetric[] @relation("teamMetrics")
 }
 
 model Board {
@@ -75,6 +84,9 @@ model Board {
   colorName   String
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  
+  // Analytics related fields
+  sprints     Sprint[]    // A board can have multiple sprints
 }
 
 // New model to manage board access
@@ -125,6 +137,18 @@ model Card {
   updatedAt   DateTime  @updatedAt
   creator     User?     @relation("cardCreator", fields: [creatorId], references: [id])
   creatorId   String?
+  
+  // Analytics related fields and relations
+  timeEntries    TimeEntry[]
+  estimatedHours Float?
+  actualHours    Float?       // Calculated from time entries
+  completedAt    DateTime?
+  isOnTime       Boolean?     // Whether completed on time
+  sprintId       String?
+  sprint         Sprint?      @relation(fields: [sprintId], references: [id])
+  tags           Tag[]
+  
+  @@index([sprintId])
 }
 
 model Comment {
@@ -171,4 +195,102 @@ model AiConversationMessage {
   role             String
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+}
+
+// ========== ANALYTICS MODELS ==========
+
+model Sprint {
+  id             String       @id @default(uuid())
+  name           String       // e.g., "Sprint 1", "Week 23", etc.
+  startDate      DateTime
+  endDate        DateTime
+  plannedPoints  Float        // Total story points planned
+  teamId         String
+  team           Team         @relation(fields: [teamId], references: [id])
+  boardId        Int
+  board          Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards          Card[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  performanceMetrics PerformanceMetric[] @relation("sprintMetrics")
+
+  @@index([teamId])
+  @@index([boardId])
+}
+
+model TimeEntry {
+  id             String       @id @default(uuid())
+  hours          Float        // Hours spent
+  date           DateTime     // When the work was done
+  notes          String?
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId         Int
+  card           Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  activityTypeId String
+  activityType   ActivityType @relation(fields: [activityTypeId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([cardId])
+  @@index([activityTypeId])
+  @@index([date])
+}
+
+model ActivityType {
+  id          String       @id @default(uuid())
+  name        String       // Planning, Development, Review, Revisions, etc.
+  color       String       // For chart visualization
+  timeEntries TimeEntry[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Tag {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  color     String?    // For UI display
+  cards     Card[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model PerformanceMetric {
+  id             String       @id @default(uuid())
+  date           DateTime
+  metricType     MetricType
+  value          Float        // The actual metric value
+  target         Float?       // Target value if applicable
+  previousValue  Float?       // Previous period's value for comparison
+  notes          String?
+  
+  // Relations - a metric can be associated with a user, team, or sprint
+  userId         String?
+  user           User?        @relation("userMetrics", fields: [userId], references: [id])
+  
+  teamId         String?
+  team           Team?        @relation("teamMetrics", fields: [teamId], references: [id])
+  
+  sprintId       String?
+  sprint         Sprint?      @relation("sprintMetrics", fields: [sprintId], references: [id])
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([sprintId])
+  @@index([date])
+  @@index([metricType])
+}
+
+enum MetricType {
+  VELOCITY
+  COMPLETION_RATE
+  AVERAGE_TIME
+  EFFICIENCY
+  PLANNING_ACCURACY
+  REVIEW_EFFICIENCY
 }
