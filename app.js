@@ -14,7 +14,7 @@ const port = process.env.PORT || 8000;
 
 app.use(
   cors({
-    origin: process.env.ENVIRONMENT === "development" ? "*" : process.env.FRONTEND_URL
+    origin: "*",
   })
 );
 
