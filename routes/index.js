@@ -14,6 +14,9 @@ const { authenticateToken } = require("../utils/validation");
 const userController = require("../controllers/userController");
 const onboardingController = require("../controllers/onboarding.controller");
 const awsRouter = require("./aws.routes");
+const analyticsRouter = require("./analytics.routes");
+const timeEntryRouter = require("./timeEntry.routes");
+
 // Auth routes
 router.use("/", authRouter);
 
@@ -35,5 +38,7 @@ router.use("/notifications", notificationRouter);
 router.use("/teams", teamRouter);
 router.use("/ai", aiRouter);
 router.use("/aws", awsRouter);
+router.use("/analytics", analyticsRouter);
+router.use("/time-entries", timeEntryRouter);
 
 module.exports = router;

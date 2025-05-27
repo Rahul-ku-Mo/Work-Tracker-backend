@@ -39,7 +39,6 @@ const createCard = async (req, res) => {
       include: {
         assignees: true,
         comments: true,
-       
       },
     });
 
@@ -60,7 +59,7 @@ const updateCard = async (req, res) => {
     title,
     description,
     columnId,
-    label : newLabel,
+    label: newLabel,
     attachments,
     dueDate,
     order,
@@ -226,6 +225,86 @@ const getCardDetails = async (req, res) => {
     });
   }
 };
+
+const upsertCardTimeEntry = async (req, res) => {
+  const { cardId } = req.params;
+
+  try {
+    const filters = {};
+
+    if (startDate && endDate) {
+      filters.date = {
+        gte: startDate,
+        lte: endDate,
+      };
+    }
+
+    if (cardId) {
+      filters.cardId = parseInt(cardId);
+    }
+
+    if (userId) {
+      filters.userId = userId;
+    }
+
+    const timeEntries = await prisma.timeEntry.findMany({
+      where: filters,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
+        card: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+      orderBy: {
+        date: "desc",
+      },
+    });
+
+    return res.status(200).json({
+      status: 200,
+      message: "success!! Time entries fetched successfully",
+      data: timeEntries,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      status: 500,
+      message: "Internal server error!! Failed to fetch time entries",
+      error: error.message,
+    });
+  }
+};
+
+const updateCardAnalytics = async (req, res) => {
+  try {
+    const { cardId } = req.params;
+    const requestObject = req.body;
+
+    //for updating estimated hours
+    if (Object.hasOwn(requestObject, "estimatedHours")) {
+      const { estimatedHours } = requestObject;
+
+      const card = await prisma.card.update({
+        where: { id: parseInt(cardId) },
+        data: { estimatedHours },
+      });
+    }
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+
 
 module.exports = {
   getCardDetails,

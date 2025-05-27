@@ -44,6 +44,7 @@ model User {
   Board                Board[]
   AiConversation       AiConversation[]
   
+  
   // Team relationship - a user belongs to one team
   team                 Team?            @relation("TeamMembers", fields: [teamId], references: [id])
   teamId               String?
@@ -73,20 +74,18 @@ model Team {
 }
 
 model Board {
-  id          Int         @id @default(autoincrement())
-  title       String
-  userId      String // Creator of the board
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  members     BoardUser[] // New: Board members
-  columns     Column[]
-  colorId     String
-  colorValue  String
-  colorName   String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  
-  // Analytics related fields
-  sprints     Sprint[]    // A board can have multiple sprints
+  id            Int            @id @default(autoincrement())
+  title         String
+  userId        String // Creator of the board
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  members       BoardUser[]    // New: Board members
+  columns       Column[]
+  colorId       String
+  colorValue    String
+  colorName     String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sprints       Sprint[]      // A board can have multiple sprints
 }
 
 // New model to manage board access
@@ -212,6 +211,8 @@ model Sprint {
   cards          Card[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  completedPoints Float?  // To track actual completed points
+  efficiency      Float?  // Sprint-specific efficiency score
   
   performanceMetrics PerformanceMetric[] @relation("sprintMetrics")
 
@@ -220,32 +221,21 @@ model Sprint {
 }
 
 model TimeEntry {
-  id             String       @id @default(uuid())
-  hours          Float        // Hours spent
-  date           DateTime     // When the work was done
-  notes          String?
+  id             String         @id @default(uuid())
   userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   cardId         Int
-  card           Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  activityTypeId String
-  activityType   ActivityType @relation(fields: [activityTypeId], references: [id])
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  card           Card           @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  startTime      DateTime       // When the time entry was first started
+  endTime        DateTime?      // When the time entry was finally completed
+  lastResumeTime DateTime?      // When the current session started (for calculating elapsed time)
+  totalDuration  Int           @default(0) // Total accumulated time in seconds
+  isPaused       Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([userId])
   @@index([cardId])
-  @@index([activityTypeId])
-  @@index([date])
-}
-
-model ActivityType {
-  id          String       @id @default(uuid())
-  name        String       // Planning, Development, Review, Revisions, etc.
-  color       String       // For chart visualization
-  timeEntries TimeEntry[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
 }
 
 model Tag {
@@ -293,4 +283,6 @@ enum MetricType {
   EFFICIENCY
   PLANNING_ACCURACY
   REVIEW_EFFICIENCY
+  TIME_DISTRIBUTION
+  PEAK_PERFORMANCE
 }
