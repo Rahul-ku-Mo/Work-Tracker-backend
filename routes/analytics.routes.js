@@ -8,6 +8,8 @@ router.use(analyticsMiddleware.validateTimeRange);
 
 // Card analytics routes
 router.get("/card/:cardId", analyticsController.getCardAnalytics);
+router.get("/card/:cardId/time-data", analyticsController.getCardTimeData);
+router.get("/card/:cardId/performance-comparison", analyticsController.getCardPerformanceComparison);
 
 // Team analytics routes
 router.get("/team/:teamId", analyticsController.getTeamAnalytics);

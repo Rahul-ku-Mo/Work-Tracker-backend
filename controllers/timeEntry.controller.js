@@ -52,14 +52,14 @@ const startTimeEntry = async (req, res) => {
 
     // Create new time entry - simplified without segments
     const timeEntry = await prisma.timeEntry.create({
-      data: {
-        userId,
-        cardId,
-        startTime: new Date(),
+        data: {
+          userId,
+          cardId,
+          startTime: new Date(),
         lastResumeTime: new Date(), // Track when current session started
-        isPaused: false,
+          isPaused: false,
         totalDuration: 0,
-      },
+        },
     });
 
     return res.status(201).json({
@@ -117,9 +117,9 @@ const pauseTimeEntry = async (req, res) => {
 
     // Update time entry with accumulated time
     const updatedEntry = await prisma.timeEntry.update({
-      where: { id: timeEntryId },
-      data: {
-        isPaused: true,
+        where: { id: timeEntryId },
+        data: {
+          isPaused: true,
         totalDuration: timeEntry.totalDuration + elapsedSeconds,
         lastResumeTime: null, // Clear resume time when paused
       },
@@ -176,11 +176,11 @@ const resumeTimeEntry = async (req, res) => {
 
     // Simply update resume time and unpause - no new records created
     const updatedEntry = await prisma.timeEntry.update({
-      where: { id: timeEntryId },
-      data: {
-        isPaused: false,
+        where: { id: timeEntryId },
+        data: {
+          isPaused: false,
         lastResumeTime: new Date(), // Track when this session started
-      },
+        },
     });
 
     return res.status(200).json({

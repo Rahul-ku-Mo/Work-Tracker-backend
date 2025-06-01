@@ -56,6 +56,7 @@ model User {
   timeEntries          TimeEntry[]
   efficiency           Int?             // Efficiency score (0-100)
   performanceMetrics   PerformanceMetric[] @relation("userMetrics")
+  performanceHistory   UserPerformanceHistory[] @relation("userPerformanceHistory")
 }
 
 model Team {
@@ -71,6 +72,7 @@ model Team {
   // Analytics related fields and relations
   sprints            Sprint[]
   performanceMetrics PerformanceMetric[] @relation("teamMetrics")
+  performanceSnapshots TeamPerformanceSnapshot[] @relation("teamSnapshots")
 }
 
 model Board {
@@ -215,6 +217,7 @@ model Sprint {
   efficiency      Float?  // Sprint-specific efficiency score
   
   performanceMetrics PerformanceMetric[] @relation("sprintMetrics")
+  performanceSnapshots TeamPerformanceSnapshot[]
 
   @@index([teamId])
   @@index([boardId])
@@ -285,4 +288,60 @@ enum MetricType {
   REVIEW_EFFICIENCY
   TIME_DISTRIBUTION
   PEAK_PERFORMANCE
+  TEAM_VELOCITY
+  BURNDOWN_RATE
+  COLLABORATION_SCORE
+}
+
+// Team Performance Snapshot - stores daily team metrics
+model TeamPerformanceSnapshot {
+  id                    String    @id @default(uuid())
+  teamId                String
+  team                  Team      @relation("teamSnapshots", fields: [teamId], references: [id])
+  date                  DateTime  @default(now())
+  
+  // Team metrics
+  velocity              Float     // Story points completed
+  velocityTrend         Float     // % change from previous period
+  completionRate        Float     // % of tasks completed on time
+  completionRateTrend   Float     // % change from previous period
+  avgCompletionTime     Float     // Average hours per task
+  avgCompletionTimeTrend Float    // % change from previous period
+  teamEfficiency        Float     // Overall team efficiency score
+  teamEfficiencyTrend   Float     // % change from previous period
+  
+  // Sprint data
+  sprintId              String?
+  sprint                Sprint?   @relation(fields: [sprintId], references: [id])
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([teamId])
+  @@index([date])
+  @@index([sprintId])
+}
+
+// Individual Performance History - tracks user performance over time
+model UserPerformanceHistory {
+  id                    String    @id @default(uuid())
+  userId                String
+  user                  User      @relation("userPerformanceHistory", fields: [userId], references: [id])
+  date                  DateTime  @default(now())
+  
+  // Individual metrics
+  tasksCompleted        Int       @default(0)
+  hoursWorked          Float     @default(0.0)
+  avgSessionTime       Float     @default(0.0)
+  efficiencyScore      Float     @default(0.0)
+  productivityRating   Float     @default(0.0)
+  
+  // Calculated trends
+  productivityTrend    String    @default("stable") // "up", "down", "stable"
+  
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([date])
 }
