@@ -71,6 +71,9 @@ const updateCard = async (req, res) => {
     // First, get the current card data
     const currentCard = await prisma.card.findUnique({
       where: { id: parseInt(cardId) },
+      include: {
+        assignees: true,
+      },
     });
 
     if (!currentCard) {
@@ -99,8 +102,30 @@ const updateCard = async (req, res) => {
       dueDate: dueDate ? new Date(dueDate) : currentCard.dueDate,
       order: order ?? currentCard.order,
       priority: priority ?? currentCard.priority,
-      assignees: assigneeId ? { connect: { id: assigneeId } } : undefined,
     };
+
+    // Handle assignee assignment/unassignment
+    if (assigneeId !== undefined) {
+      if (assigneeId === null || assigneeId === "") {
+        // Unassign all assignees
+        updateData.assignees = {
+          set: [], // This removes all assignees
+        };
+      } else {
+        // Check if user is already assigned
+        const isAlreadyAssigned = currentCard.assignees.some(
+          (assignee) => assignee.id === assigneeId
+        );
+
+        if (!isAlreadyAssigned) {
+          // Add the new assignee (for now, we'll replace all assignees with this one)
+          // In the future, this can be modified to support multiple assignees
+          updateData.assignees = {
+            set: [{ id: assigneeId }], // Replace all assignees with this one
+          };
+        }
+      }
+    }
 
     // Update the card
     const updatedCard = await prisma.card.update({
@@ -112,6 +137,7 @@ const updateCard = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            username: true,
             imageUrl: true,
           },
         },
@@ -139,6 +165,15 @@ const getCards = async (req, res) => {
       },
       include: {
         comments: true,
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+          },
+        },
       },
     });
 
@@ -162,6 +197,15 @@ const getCard = async (req, res) => {
       },
       include: {
         comments: true,
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+          },
+        },
       },
     });
 

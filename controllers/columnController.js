@@ -7,7 +7,11 @@ exports.getColumns = async (req, res) => {
     const columns = await prisma.column.findMany({
       where: { boardId: parseInt(boardId) },
       include: {
-        cards: true,
+        cards: {
+          include: {
+            assignees: true,
+          }
+        }
       },
     });
 
@@ -82,7 +86,11 @@ exports.getColumn = async (req, res) => {
     const column = await prisma.column.findUnique({
       where: { id: parseInt(columnId) },
       include: {
-        cards: true,
+        cards: {
+          include: {
+            assignees: true,
+          }
+        }
       },
     });
 
