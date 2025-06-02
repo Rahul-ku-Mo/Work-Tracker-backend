@@ -1,20 +1,22 @@
 const express = require("express");
-const router = express.Router();
 const teamController = require("../controllers/team.controller");
+const { authenticateToken } = require("../utils/validation");
 
-// Create a new team (admin only)
-router.post("/", teamController.createTeam);
+const router = express.Router();
 
-// Get current user's team
-router.get("/", teamController.getTeam);
+// Public routes (no authentication required)
+router.get("/validate-code/:code", teamController.validateInviteCode);
 
-// Invite a member to team (admin only)
+// Protected routes (authentication required)
+router.use(authenticateToken);
+
+router
+  .route("/")
+  .get(teamController.getTeam)
+  .post(teamController.createTeam);
+
 router.post("/invite", teamController.inviteMember);
-
-// Join a team using a join code
 router.post("/join", teamController.joinTeam);
-
-// Get all team members
-router.get("/member", teamController.getTeamMembers);
+router.get("/members", teamController.getTeamMembers);
 
 module.exports = router; 

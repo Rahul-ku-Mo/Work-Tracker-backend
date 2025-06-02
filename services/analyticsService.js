@@ -5,58 +5,71 @@ class AnalyticsService {
   
   // Calculate team performance metrics for a given time period
   async calculateTeamPerformance(teamId, timeRange = 'week') {
-    const { start, end } = this.getTimeRange(timeRange);
-    
-    // Get all team members and their performance data
-    const teamMembers = await prisma.user.findMany({
-      where: { teamId },
-      include: {
-        timeEntries: {
-          where: {
-            startTime: { gte: start, lte: end }
+    try {
+      const { start, end } = this.getTimeRange(timeRange);
+      
+      console.log('Calculating team performance for:', { teamId, timeRange, start, end });
+      
+      // Get all team members and their performance data
+      const teamMembers = await prisma.user.findMany({
+        where: { teamId },
+        include: {
+          timeEntries: {
+            where: {
+              startTime: { gte: start, lte: end }
+            },
+            include: { card: true }
           },
-          include: { card: true }
-        },
-        assignedCards: {
-          where: {
-            updatedAt: { gte: start, lte: end }
+          assignedCards: {
+            where: {
+              updatedAt: { gte: start, lte: end }
+            }
           }
         }
-      }
-    });
+      });
 
-    // Calculate individual member metrics
-    const memberPerformance = teamMembers.map(member => {
-      const completedTasks = member.assignedCards.filter(card => card.completedAt).length;
-      const totalHours = member.timeEntries.reduce((sum, entry) => sum + (entry.totalDuration || 0), 0) / 3600;
-      const avgTimePerTask = completedTasks > 0 ? totalHours / completedTasks : 0;
-      
-      // Calculate efficiency based on multiple factors
-      const efficiency = this.calculateUserEfficiency(member, timeRange);
-      
+      console.log('Found team members:', teamMembers.length);
+
+      // Calculate individual member metrics
+      const memberPerformance = teamMembers.map(member => {
+        const completedTasks = member.assignedCards.filter(card => card.completedAt).length;
+        const totalHours = member.timeEntries.reduce((sum, entry) => sum + (entry.totalDuration || 0), 0) / 3600;
+        const avgTimePerTask = completedTasks > 0 ? totalHours / completedTasks : 0;
+        
+        // Calculate efficiency based on multiple factors
+        const efficiency = this.calculateUserEfficiency(member, timeRange);
+        
+        return {
+          id: member.id,
+          name: member.name,
+          role: this.getUserRole(member),
+          avatar: member.name?.split(' ').map(n => n[0]).join('') || 'U',
+          tasksCompleted: completedTasks,
+          avgTime: parseFloat(avgTimePerTask.toFixed(2)),
+          efficiency,
+          trend: this.calculateTrend(member.id, timeRange)
+        };
+      });
+
+      console.log('Member performance calculated');
+
+      // Calculate team-wide metrics
+      const teamStats = await this.calculateTeamStats(teamId, timeRange);
+      const velocityData = await this.calculateVelocityData(teamId, timeRange);
+      const completionRateData = await this.calculateCompletionRates(teamId, timeRange);
+
+      console.log('Team stats calculated');
+
       return {
-        id: member.id,
-        name: member.name,
-        role: this.getUserRole(member),
-        avatar: member.name?.split(' ').map(n => n[0]).join('') || 'U',
-        tasksCompleted: completedTasks,
-        avgTime: parseFloat(avgTimePerTask.toFixed(2)),
-        efficiency,
-        trend: this.calculateTrend(member.id, timeRange)
+        memberPerformance,
+        teamStats,
+        velocityData,
+        completionRateData
       };
-    });
-
-    // Calculate team-wide metrics
-    const teamStats = await this.calculateTeamStats(teamId, timeRange);
-    const velocityData = await this.calculateVelocityData(teamId, timeRange);
-    const completionRateData = await this.calculateCompletionRates(teamId, timeRange);
-
-    return {
-      memberPerformance,
-      teamStats,
-      velocityData,
-      completionRateData
-    };
+    } catch (error) {
+      console.error('Error in calculateTeamPerformance:', error);
+      throw error;
+    }
   }
 
   // Calculate individual user efficiency score
@@ -92,67 +105,82 @@ class AnalyticsService {
 
   // Calculate team statistics
   async calculateTeamStats(teamId, timeRange) {
-    const { start, end } = this.getTimeRange(timeRange);
-    const { start: prevStart, end: prevEnd } = this.getTimeRange(timeRange, true); // Previous period
-    
-    // Current period metrics
-    const currentCards = await prisma.card.findMany({
-      where: {
-        assignees: { some: { teamId } },
-        updatedAt: { gte: start, lte: end }
-      },
-      include: { timeEntries: true }
-    });
-    
-    // Previous period metrics for trend calculation
-    const previousCards = await prisma.card.findMany({
-      where: {
-        assignees: { some: { teamId } },
-        updatedAt: { gte: prevStart, lte: prevEnd }
-      },
-      include: { timeEntries: true }
-    });
+    try {
+      const { start, end } = this.getTimeRange(timeRange);
+      const { start: prevStart, end: prevEnd } = this.getTimeRange(timeRange, true); // Previous period
+      
+      console.log('Calculating team stats for timeRange:', { start, end, prevStart, prevEnd });
+      
+      // Current period metrics - find cards assigned to team members
+      const currentCards = await prisma.card.findMany({
+        where: {
+          assignees: { 
+            some: { teamId } 
+          },
+          updatedAt: { gte: start, lte: end }
+        },
+        include: { timeEntries: true }
+      });
+      
+      // Previous period metrics for trend calculation
+      const previousCards = await prisma.card.findMany({
+        where: {
+          assignees: { 
+            some: { teamId } 
+          },
+          updatedAt: { gte: prevStart, lte: prevEnd }
+        },
+        include: { timeEntries: true }
+      });
 
-    const currentCompleted = currentCards.filter(card => card.completedAt).length;
-    const currentOnTime = currentCards.filter(card => card.isOnTime).length;
-    const currentTotalTime = currentCards.reduce((sum, card) => 
-      sum + card.timeEntries.reduce((cardSum, entry) => cardSum + (entry.totalDuration || 0), 0), 0) / 3600;
-    
-    const previousCompleted = previousCards.filter(card => card.completedAt).length;
-    const previousOnTime = previousCards.filter(card => card.isOnTime).length;
-    const previousTotalTime = previousCards.reduce((sum, card) => 
-      sum + card.timeEntries.reduce((cardSum, entry) => cardSum + (entry.totalDuration || 0), 0), 0) / 3600;
+      console.log('Cards found:', { current: currentCards.length, previous: previousCards.length });
 
-    // Calculate trends
-    const velocityTrend = this.calculatePercentageChange(currentCompleted, previousCompleted);
-    const completionRateTrend = this.calculatePercentageChange(
-      currentCards.length > 0 ? (currentOnTime / currentCards.length) * 100 : 0,
-      previousCards.length > 0 ? (previousOnTime / previousCards.length) * 100 : 0
-    );
-    const avgTimeTrend = this.calculatePercentageChange(
-      currentCards.length > 0 ? currentTotalTime / currentCards.length : 0,
-      previousCards.length > 0 ? previousTotalTime / previousCards.length : 0
-    );
+      const currentCompleted = currentCards.filter(card => card.completedAt).length;
+      const currentOnTime = currentCards.filter(card => card.isOnTime).length;
+      const currentTotalTime = currentCards.reduce((sum, card) => 
+        sum + card.timeEntries.reduce((cardSum, entry) => cardSum + (entry.totalDuration || 0), 0), 0) / 3600;
+      
+      const previousCompleted = previousCards.filter(card => card.completedAt).length;
+      const previousOnTime = previousCards.filter(card => card.isOnTime).length;
+      const previousTotalTime = previousCards.reduce((sum, card) => 
+        sum + card.timeEntries.reduce((cardSum, entry) => cardSum + (entry.totalDuration || 0), 0), 0) / 3600;
 
-    // Team efficiency calculation
-    const teamMembers = await prisma.user.findMany({
-      where: { teamId },
-      include: { timeEntries: { where: { startTime: { gte: start, lte: end } } } }
-    });
-    
-    const teamEfficiency = teamMembers.length > 0 ? 
-      teamMembers.reduce((sum, member) => sum + this.calculateUserEfficiency(member, timeRange), 0) / teamMembers.length : 0;
+      // Calculate trends
+      const velocityTrend = this.calculatePercentageChange(currentCompleted, previousCompleted);
+      const completionRateTrend = this.calculatePercentageChange(
+        currentCards.length > 0 ? (currentOnTime / currentCards.length) * 100 : 0,
+        previousCards.length > 0 ? (previousOnTime / previousCards.length) * 100 : 0
+      );
+      const avgTimeTrend = this.calculatePercentageChange(
+        currentCards.length > 0 ? currentTotalTime / currentCards.length : 0,
+        previousCards.length > 0 ? previousTotalTime / previousCards.length : 0
+      );
 
-    return {
-      velocity: currentCompleted,
-      velocityTrend,
-      completionRate: currentCards.length > 0 ? Math.round((currentOnTime / currentCards.length) * 100) : 0,
-      completionRateTrend,
-      avgCompletionTime: currentCards.length > 0 ? parseFloat((currentTotalTime / currentCards.length).toFixed(1)) : 0,
-      avgCompletionTimeTrend: avgTimeTrend,
-      teamEfficiency: Math.round(teamEfficiency),
-      teamEfficiencyTrend: 3 // This should be calculated from historical data
-    };
+      // Team efficiency calculation
+      const teamMembers = await prisma.user.findMany({
+        where: { teamId },
+        include: { timeEntries: { where: { startTime: { gte: start, lte: end } } } }
+      });
+      
+      const teamEfficiency = teamMembers.length > 0 ? 
+        teamMembers.reduce((sum, member) => sum + this.calculateUserEfficiency(member, timeRange), 0) / teamMembers.length : 0;
+
+      console.log('Team stats calculated successfully');
+
+      return {
+        velocity: currentCompleted,
+        velocityTrend,
+        completionRate: currentCards.length > 0 ? Math.round((currentOnTime / currentCards.length) * 100) : 0,
+        completionRateTrend,
+        avgCompletionTime: currentCards.length > 0 ? parseFloat((currentTotalTime / currentCards.length).toFixed(1)) : 0,
+        avgCompletionTimeTrend: avgTimeTrend,
+        teamEfficiency: Math.round(teamEfficiency),
+        teamEfficiencyTrend: 3 // This should be calculated from historical data
+      };
+    } catch (error) {
+      console.error('Error in calculateTeamStats:', error);
+      throw error;
+    }
   }
 
   // Calculate velocity data for charts
@@ -314,15 +342,15 @@ class AnalyticsService {
     
     switch (timeRange) {
       case 'day':
-        // Show hourly periods for today
-        for (let i = 8; i >= 0; i--) {
+        // Show hourly periods for today (all 24 hours)
+        for (let i = 23; i >= 0; i--) {
           const start = new Date(now);
-          start.setHours(9 + (8 - i), 0, 0, 0); // 9 AM to 5 PM
+          start.setHours(23 - i, 0, 0, 0); // 0 to 23 (all 24 hours)
           const end = new Date(start);
           end.setHours(start.getHours() + 1, 0, 0, 0);
           
           periods.push({
-            label: `${start.getHours()}:00`,
+            label: `${start.getHours().toString().padStart(2, '0')}:00`,
             start,
             end
           });

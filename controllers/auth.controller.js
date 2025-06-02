@@ -26,7 +26,7 @@ exports.createSendToken = (user, res) => {
 };
 
 exports.signup = async (req, res) => {
-  const { email, password, username } = req.body;
+  const { email, password, username, inviteCode } = req.body;
 
   //1.check for existing user
   const existingUser = await prisma.user.findUnique({
@@ -42,12 +42,27 @@ exports.signup = async (req, res) => {
 
   //3.create the user and store it in the database
   try {
+    // Check if invite code is provided and valid
+    let teamToJoin = null;
+    if (inviteCode && inviteCode.trim()) {
+      teamToJoin = await prisma.team.findUnique({
+        where: { joinCode: inviteCode.trim().toUpperCase() }
+      });
+      
+      if (!teamToJoin) {
+        return res.status(400).json({ 
+          message: "Invalid invite code. Please check the code and try again." 
+        });
+      }
+    }
+
     const user = await prisma.user.create({
       data: {
         email: email,
         password: cryptPassword,
         username: username,
-        role: "ADMIN",
+        role: teamToJoin ? "USER" : "ADMIN", // If joining via invite, make them USER, otherwise ADMIN
+        teamId: teamToJoin ? teamToJoin.id : null, // Auto-join team if invite code is valid
       },
       select: {
         id: true,
@@ -67,13 +82,25 @@ exports.signup = async (req, res) => {
         updatedAt: true,
         password: false,
         isPaidUser: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+            joinCode: true
+          }
+        }
       },
     });
 
     const accesstoken = this.createSendToken(user, res);
 
+    let responseMessage = "Account created successfully";
+    if (teamToJoin) {
+      responseMessage = `Account created successfully and joined team: ${teamToJoin.name}`;
+    }
+
     res.status(201).json({
-      message: "success",
+      message: responseMessage,
       data: user,
       accesstoken,
     });

@@ -354,12 +354,18 @@ const analyticsController = {
       const { teamId } = req.params;
       const { timeRange = 'week' } = req.query;
 
+      console.log('Team Analytics Request:', { teamId, timeRange });
+
       // Get comprehensive team performance data
       const performanceData = await analyticsService.calculateTeamPerformance(teamId, timeRange);
+      
+      console.log('Performance data calculated successfully');
       
       // Generate AI-powered insights and recommendations
       const insights = await analyticsService.generateTeamInsights(teamId, performanceData, timeRange);
       const recommendations = await analyticsService.generateTeamRecommendations(teamId, performanceData, timeRange);
+
+      console.log('Insights and recommendations generated successfully');
 
       return res.json({
         success: true,
@@ -372,9 +378,11 @@ const analyticsController = {
       });
     } catch (error) {
       console.error('Error in getTeamAnalytics:', error);
+      console.error('Error stack:', error.stack);
       return res.status(500).json({
         success: false,
-        error: 'Failed to fetch team analytics'
+        error: 'Failed to fetch team analytics',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -529,11 +537,11 @@ const analyticsController = {
 
       switch (timeRange) {
         case 'day':
-          // Show hourly data for today (working hours 9 AM to 6 PM)
+          // Show hourly data for today (all 24 hours)
           const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const workingHours = Array.from({ length: 10 }, (_, i) => 9 + i); // 9 AM to 6 PM
+          const allHours = Array.from({ length: 24 }, (_, i) => i); // 0 to 23 (all 24 hours)
 
-          aggregatedData = workingHours.map(hour => {
+          aggregatedData = allHours.map(hour => {
             const hourStart = new Date(today);
             hourStart.setHours(hour, 0, 0, 0);
             const hourEnd = new Date(today);
@@ -542,7 +550,7 @@ const analyticsController = {
             const hoursWorked = calculateTimeInRange(timeEntries, hourStart, hourEnd);
             
             return {
-              period: `${hour}:00`,
+              period: `${hour.toString().padStart(2, '0')}:00`,
               time: parseFloat((hoursWorked / 60).toFixed(2)) // Convert minutes to hours
             };
           });
