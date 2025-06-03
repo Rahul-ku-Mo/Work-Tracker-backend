@@ -348,7 +348,170 @@ const updateCardAnalytics = async (req, res) => {
   }
 };
 
+// Mark card as completed
+const markCardComplete = async (req, res) => {
+  const { cardId } = req.params;
 
+  try {
+    const card = await prisma.card.findUnique({
+      where: { id: parseInt(cardId) },
+      include: { column: true }
+    });
+
+    if (!card) {
+      return res.status(404).json({
+        status: 404,
+        message: "Card not found",
+      });
+    }
+
+    const now = new Date();
+    const isOnTime = card.dueDate ? now <= new Date(card.dueDate) : true;
+
+    const updatedCard = await prisma.card.update({
+      where: { id: parseInt(cardId) },
+      data: {
+        completedAt: now,
+        isOnTime: isOnTime,
+      },
+      include: {
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+          },
+        },
+        column: true,
+      },
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Card marked as complete",
+      data: updatedCard,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Mark card as incomplete
+const markCardIncomplete = async (req, res) => {
+  const { cardId } = req.params;
+
+  try {
+    const card = await prisma.card.findUnique({
+      where: { id: parseInt(cardId) }
+    });
+
+    if (!card) {
+      return res.status(404).json({
+        status: 404,
+        message: "Card not found",
+      });
+    }
+
+    const updatedCard = await prisma.card.update({
+      where: { id: parseInt(cardId) },
+      data: {
+        completedAt: null,
+        isOnTime: null,
+      },
+      include: {
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+          },
+        },
+        column: true,
+      },
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Card marked as incomplete",
+      data: updatedCard,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get cards with completion and overdue status
+const getCardsWithStatus = async (req, res) => {
+  const { columnId, boardId } = req.query;
+
+  try {
+    const whereClause = {};
+    
+    if (columnId) {
+      whereClause.columnId = parseInt(columnId);
+    } else if (boardId) {
+      whereClause.column = {
+        boardId: parseInt(boardId)
+      };
+    }
+
+    const cards = await prisma.card.findMany({
+      where: whereClause,
+      include: {
+        comments: true,
+        assignees: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+          },
+        },
+        column: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    // Add computed status fields
+    const now = new Date();
+    const cardsWithStatus = cards.map(card => {
+      const isCompleted = !!card.completedAt;
+      const isOverdue = !isCompleted && card.dueDate && new Date(card.dueDate) < now;
+      
+      return {
+        ...card,
+        status: {
+          isCompleted,
+          isOverdue,
+          isOnTime: card.isOnTime,
+          daysOverdue: isOverdue 
+            ? Math.ceil((now.getTime() - new Date(card.dueDate).getTime()) / (1000 * 60 * 60 * 24))
+            : 0
+        }
+      };
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: cardsWithStatus,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
 
 module.exports = {
   getCardDetails,
@@ -357,4 +520,9 @@ module.exports = {
   getCards,
   getCard,
   deleteCard,
+  upsertCardTimeEntry,
+  updateCardAnalytics,
+  markCardComplete,
+  markCardIncomplete,
+  getCardsWithStatus,
 };
