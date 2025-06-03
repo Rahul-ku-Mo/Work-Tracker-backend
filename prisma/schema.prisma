@@ -35,6 +35,7 @@ model User {
   company              String?
   department           String?
   isPaidUser           Boolean?         @default(false)
+  isActive             Boolean?         @default(true)
   role                 AppRole          @default(USER)
   updatedAt            DateTime         @updatedAt
   receivedNotification Notification[]   @relation("receiver")
@@ -57,6 +58,9 @@ model User {
   efficiency           Int?             // Efficiency score (0-100)
   performanceMetrics   PerformanceMetric[] @relation("userMetrics")
   performanceHistory   UserPerformanceHistory[] @relation("userPerformanceHistory")
+  
+  // Board invitations sent by this user
+  sentBoardInvitations BoardInvitation[] @relation("BoardInvitationSender")
 }
 
 model Team {
@@ -88,6 +92,7 @@ model Board {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   sprints       Sprint[]      // A board can have multiple sprints
+  invitations   BoardInvitation[] // Board invitations for this board
 }
 
 // New model to manage board access
@@ -108,6 +113,25 @@ model BoardUser {
 enum BoardRole {
   ADMIN
   MEMBER
+}
+
+// Board invitation model for inviting users via email
+model BoardInvitation {
+  id        String    @id @default(uuid())
+  email     String
+  boardId   Int
+  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  role      BoardRole @default(MEMBER)
+  token     String    @unique
+  invitedBy String
+  inviter   User      @relation("BoardInvitationSender", fields: [invitedBy], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([email])
+  @@index([token])
 }
 
 model Column {

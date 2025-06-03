@@ -3,7 +3,7 @@ const prisma = new PrismaClient();
 
 async function seedAnalyticsData() {
   try {
-    console.log('🚀 Starting analytics data seeding...');
+    console.log('🌱 Starting to seed analytics data...');
 
     // Create team captain first
     const captain = await prisma.user.upsert({
@@ -12,66 +12,115 @@ async function seedAnalyticsData() {
       create: {
         id: 'captain-1',
         email: 'captain@example.com',
-        name: 'Alex Rodriguez',
-        efficiency: 92,
-        role: 'USER'
+        name: 'Alex Johnson',
+        username: 'alexj',
+        role: 'ADMIN',
+        efficiency: 95,
+        imageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
       }
     });
 
-    console.log('✅ Captain created:', captain.name);
+    console.log('✅ Team captain created');
 
-    // Create a sample team
+    // Create team
     const team = await prisma.team.upsert({
-      where: { id: 'team-1' },
+      where: { id: 'team-alpha' },
       update: {},
       create: {
-        id: 'team-1',
-        name: 'Development Team Alpha',
-        joinCode: 'ALPHA2024',
-        captainId: captain.id
+        id: 'team-alpha',
+        name: 'Alpha Development Team',
+        captainId: captain.id,
+        joinCode: 'ALPHA2024'
       }
     });
 
-    console.log('✅ Team created:', team.name);
+    console.log('✅ Team created');
 
-    // Update captain to be part of the team
-    await prisma.user.update({
-      where: { id: captain.id },
-      data: { teamId: team.id }
-    });
-
-    // Create team members with varying performance profiles
+    // Create extended team members with diverse roles and skill sets
     const teamMembers = [
       {
         id: 'user-1',
-        email: 'sarah.frontend@example.com',
+        email: 'sarah.chen@example.com',
         name: 'Sarah Chen',
-        efficiency: 89,
-        role: 'Frontend Developer'
+        username: 'sarahc',
+        role: 'USER',
+        efficiency: 88,
+        department: 'Engineering',
+        imageUrl: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face'
       },
       {
-        id: 'user-2',
-        email: 'mike.backend@example.com',
-        name: 'Mike Johnson',
-        efficiency: 76,
-        role: 'Backend Developer'
+        id: 'user-2', 
+        email: 'mike.rodriguez@example.com',
+        name: 'Mike Rodriguez',
+        username: 'miker',
+        role: 'USER',
+        efficiency: 92,
+        department: 'Engineering',
+        imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face'
       },
       {
         id: 'user-3',
-        email: 'emma.qa@example.com',
-        name: 'Emma Wilson',
-        efficiency: 94,
-        role: 'QA Engineer'
+        email: 'emma.thompson@example.com', 
+        name: 'Emma Thompson',
+        username: 'emmat',
+        role: 'USER',
+        efficiency: 85,
+        department: 'Quality Assurance',
+        imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face'
       },
       {
         id: 'user-4',
-        email: 'david.design@example.com',
-        name: 'David Kim',
-        efficiency: 81,
-        role: 'UI/UX Designer'
+        email: 'david.kim@example.com',
+        name: 'David Kim', 
+        username: 'davidk',
+        role: 'USER',
+        efficiency: 90,
+        department: 'Design',
+        imageUrl: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?w=150&h=150&fit=crop&crop=face'
+      },
+      {
+        id: 'user-5',
+        email: 'lisa.wang@example.com',
+        name: 'Lisa Wang',
+        username: 'lisaw',
+        role: 'USER', 
+        efficiency: 89,
+        department: 'Product Management',
+        imageUrl: 'https://images.unsplash.com/photo-1554151228-14d9def656e4?w=150&h=150&fit=crop&crop=face'
+      },
+      {
+        id: 'user-6',
+        email: 'james.brown@example.com',
+        name: 'James Brown',
+        username: 'jamesb',
+        role: 'USER',
+        efficiency: 86,
+        department: 'DevOps', 
+        imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face'
+      },
+      {
+        id: 'user-7',
+        email: 'ana.garcia@example.com',
+        name: 'Ana Garcia',
+        username: 'anag',
+        role: 'USER',
+        efficiency: 91,
+        department: 'Engineering',
+        imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&crop=face'
+      },
+      {
+        id: 'user-8',
+        email: 'tom.wilson@example.com',
+        name: 'Tom Wilson',
+        username: 'tomw',
+        role: 'USER',
+        efficiency: 87,
+        department: 'Security',
+        imageUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&h=150&fit=crop&crop=face'
       }
     ];
 
+    // Create team members
     for (const member of teamMembers) {
       await prisma.user.upsert({
         where: { id: member.id },
@@ -80,14 +129,109 @@ async function seedAnalyticsData() {
           id: member.id,
           email: member.email,
           name: member.name,
+          username: member.username,
           teamId: team.id,
           efficiency: member.efficiency,
-          role: 'USER'
+          role: member.role,
+          department: member.department,
+          imageUrl: member.imageUrl
         }
       });
     }
 
     console.log('✅ Team members created');
+
+    // Create multiple boards with different access levels
+    const boards = [
+      {
+        id: 1,
+        title: 'Product Development Board',
+        userId: captain.id,
+        colorId: 'blue',
+        colorValue: '#3b82f6',
+        colorName: 'Blue'
+      },
+      {
+        id: 2, 
+        title: 'Design System Project',
+        userId: 'user-4', // David Kim (Designer)
+        colorId: 'purple',
+        colorValue: '#8b5cf6',
+        colorName: 'Purple'
+      },
+      {
+        id: 3,
+        title: 'Security Audit Board',
+        userId: 'user-8', // Tom Wilson (Security)
+        colorId: 'red',
+        colorValue: '#ef4444',
+        colorName: 'Red'
+      },
+      {
+        id: 4,
+        title: 'QA Testing Pipeline',
+        userId: 'user-3', // Emma Thompson (QA)
+        colorId: 'green',
+        colorValue: '#22c55e',
+        colorName: 'Green'
+      }
+    ];
+
+    const createdBoards = [];
+    for (const board of boards) {
+      const createdBoard = await prisma.board.upsert({
+        where: { id: board.id },
+        update: {},
+        create: board
+      });
+      createdBoards.push(createdBoard);
+    }
+
+    console.log('✅ Boards created');
+
+    // Create board members with different roles
+    const boardMemberships = [
+      // Product Development Board - Everyone has access
+      { boardId: 1, userId: captain.id, role: 'ADMIN' },
+      { boardId: 1, userId: 'user-1', role: 'MEMBER' },
+      { boardId: 1, userId: 'user-2', role: 'MEMBER' },
+      { boardId: 1, userId: 'user-3', role: 'MEMBER' },
+      { boardId: 1, userId: 'user-4', role: 'MEMBER' },
+      { boardId: 1, userId: 'user-5', role: 'ADMIN' }, // Lisa is also admin
+      
+      // Design System Project - Design focused
+      { boardId: 2, userId: 'user-4', role: 'ADMIN' },
+      { boardId: 2, userId: captain.id, role: 'ADMIN' },
+      { boardId: 2, userId: 'user-1', role: 'MEMBER' },
+      { boardId: 2, userId: 'user-5', role: 'MEMBER' },
+      
+      // Security Audit Board - Security team only
+      { boardId: 3, userId: 'user-8', role: 'ADMIN' },
+      { boardId: 3, userId: captain.id, role: 'ADMIN' },
+      { boardId: 3, userId: 'user-6', role: 'MEMBER' }, // DevOps has access
+      
+      // QA Testing Pipeline - QA focused
+      { boardId: 4, userId: 'user-3', role: 'ADMIN' },
+      { boardId: 4, userId: captain.id, role: 'ADMIN' },
+      { boardId: 4, userId: 'user-1', role: 'MEMBER' },
+      { boardId: 4, userId: 'user-2', role: 'MEMBER' },
+      { boardId: 4, userId: 'user-7', role: 'MEMBER' },
+    ];
+
+    for (const membership of boardMemberships) {
+      await prisma.boardUser.upsert({
+        where: {
+          boardId_userId: {
+            boardId: membership.boardId,
+            userId: membership.userId
+          }
+        },
+        update: { role: membership.role },
+        create: membership
+      });
+    }
+
+    console.log('✅ Board memberships created');
 
     // Create a sample board
     const board = await prisma.board.upsert({
@@ -345,7 +489,8 @@ async function seedAnalyticsData() {
     console.log(`
 📊 Created:
 - 1 Team (${team.name})
-- 5 Team Members (including captain)
+- 8 Team Members (including captain)
+- 4 Boards with varying access levels
 - 1 Board with 4 columns
 - 6 Cards with varying priorities and states
 - ${timeEntries.length} Time Entries across multiple work sessions

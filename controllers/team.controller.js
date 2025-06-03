@@ -499,3 +499,583 @@ exports.validateInviteCode = async (req, res) => {
   }
 };
 
+// Get team boards - boards created by team members
+exports.getTeamBoards = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+
+    // Find user's team
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        team: {
+          include: {
+            members: {
+              select: {
+                id: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!user || !user.team) {
+      return res.status(404).json({
+        status: 404,
+        message: "No team found for user",
+      });
+    }
+
+    const teamMemberIds = user.team.members.map(member => member.id);
+
+    // Get boards created by team members
+    const boards = await prisma.board.findMany({
+      where: {
+        userId: {
+          in: teamMemberIds
+        }
+      },
+      select: {
+        id: true,
+        title: true,
+        colorName: true,
+        colorValue: true,
+        userId: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    return res.status(200).json({
+      status: 200,
+      message: "Team boards retrieved successfully",
+      data: boards
+    });
+  } catch (error) {
+    console.error('Error in getTeamBoards:', error);
+    res.status(500).json({ 
+      status: 500, 
+      message: "Internal Server Error" 
+    });
+  }
+};
+
+// Get team members with their board access
+const getTeamMembers = async (req, res) => {
+  const { teamId } = req.params;
+  const userId = req.user?.userId; // Use userId from JWT token
+
+  try {
+    let team;
+    
+    if (teamId) {
+      // If teamId is provided, use it directly
+      team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: {
+          members: {
+            include: {
+              boards: {
+                include: {
+                  board: {
+                    select: {
+                      id: true,
+                      title: true,
+                      colorName: true,
+                      colorValue: true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          captain: true
+        }
+      });
+    } else if (userId) {
+      // If no teamId provided, find team through user's membership
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          team: {
+            include: {
+              members: {
+                include: {
+                  boards: {
+                    include: {
+                      board: {
+                        select: {
+                          id: true,
+                          title: true,
+                          colorName: true,
+                          colorValue: true
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              captain: true
+            }
+          }
+        }
+      });
+      
+      // Get the user's team
+      team = user?.team;
+    } else {
+      return res.status(400).json({
+        status: 400,
+        message: "Team ID or user authentication required"
+      });
+    }
+
+    if (!team) {
+      return res.status(404).json({
+        status: 404,
+        message: "Team not found"
+      });
+    }
+
+    // Handle case where team has no members
+    if (!team.members || team.members.length === 0) {
+      return res.status(200).json({
+        status: 200,
+        message: "Success",
+        data: {
+          team,
+          members: []
+        }
+      });
+    }
+
+    // Format response with board access info
+    const membersWithAccess = team.members.map(member => ({
+      ...member,
+      boardAccess: member.boards?.map(bu => ({
+        board: bu.board,
+        role: bu.role,
+        canEdit: bu.role === 'ADMIN'
+      })) || []
+    }));
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: {
+        team,
+        members: membersWithAccess
+      }
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Add user to board (Admin only)
+const addUserToBoard = async (req, res) => {
+  const { boardId, userId } = req.params;
+  const { role = 'MEMBER' } = req.body;
+  const requestorId = req.user?.userId; // Use userId from JWT token
+
+  try {
+    // Check if requestor is admin of the board
+    const requestorAccess = await prisma.boardUser.findUnique({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: requestorId
+        }
+      }
+    });
+
+    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 403,
+        message: "Only board admins can add users"
+      });
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        status: 404,
+        message: "User not found"
+      });
+    }
+
+    // Add user to board
+    const boardUser = await prisma.boardUser.upsert({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: userId
+        }
+      },
+      update: { role },
+      create: {
+        boardId: parseInt(boardId),
+        userId: userId,
+        role
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+            department: true
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "User added to board successfully",
+      data: boardUser
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Remove user from board (Admin only)
+const removeUserFromBoard = async (req, res) => {
+  const { boardId, userId } = req.params;
+  const requestorId = req.user?.userId;
+
+  try {
+    // Check if requestor is admin of the board
+    const requestorAccess = await prisma.boardUser.findUnique({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: requestorId
+        }
+      }
+    });
+
+    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 403,
+        message: "Only board admins can remove users"
+      });
+    }
+
+    // Remove user from board
+    await prisma.boardUser.delete({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: userId
+        }
+      }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "User removed from board successfully"
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Update user permissions on board (Admin only)
+const updateUserPermissions = async (req, res) => {
+  const { boardId, userId } = req.params;
+  const { role } = req.body;
+  const requestorId = req.user?.userId;
+
+  try {
+    // Check if requestor is admin of the board
+    const requestorAccess = await prisma.boardUser.findUnique({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: requestorId
+        }
+      }
+    });
+
+    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 403,
+        message: "Only board admins can update permissions"
+      });
+    }
+
+    // Update user role
+    const updatedBoardUser = await prisma.boardUser.update({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: userId
+        }
+      },
+      data: { role },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "User permissions updated successfully",
+      data: updatedBoardUser
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Toggle user status (enable/disable) - Team captain only
+const toggleUserStatus = async (req, res) => {
+  const { userId } = req.params;
+  const { isActive } = req.body;
+  const requestorId = req.user?.userId;
+
+  try {
+    // Check if requestor is team captain or has admin role
+    const requestor = await prisma.user.findUnique({
+      where: { id: requestorId },
+      include: {
+        captainOfTeam: true
+      }
+    });
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { team: true }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({
+        status: 404,
+        message: "User not found"
+      });
+    }
+
+    // Check permissions
+    const canModify = requestor.role === 'ADMIN' || 
+                     (requestor.captainOfTeam && requestor.captainOfTeam.id === targetUser.teamId);
+
+    if (!canModify) {
+      return res.status(403).json({
+        status: 403,
+        message: "Only team captains or admins can modify user status"
+      });
+    }
+
+    // Update user status
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { isActive },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        username: true,
+        isActive: true,
+        department: true,
+        efficiency: true
+      }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: `User ${isActive ? 'enabled' : 'disabled'} successfully`,
+      data: updatedUser
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Send board invitation
+const sendBoardInvitation = async (req, res) => {
+  const { boardId } = req.params;
+  const { email, role = 'MEMBER' } = req.body;
+  const requestorId = req.user?.userId;
+
+  try {
+    // Check if requestor is admin of the board
+    const requestorAccess = await prisma.boardUser.findUnique({
+      where: {
+        boardId_userId: {
+          boardId: parseInt(boardId),
+          userId: requestorId
+        }
+      }
+    });
+
+    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 403,
+        message: "Only board admins can send invitations"
+      });
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { id: parseInt(boardId) }
+    });
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      // Check if already a board member
+      const existingMembership = await prisma.boardUser.findUnique({
+        where: {
+          boardId_userId: {
+            boardId: parseInt(boardId),
+            userId: existingUser.id
+          }
+        }
+      });
+
+      if (existingMembership) {
+        return res.status(400).json({
+          status: 400,
+          message: "User is already a member of this board"
+        });
+      }
+
+      // Add existing user to board
+      const boardUser = await prisma.boardUser.create({
+        data: {
+          boardId: parseInt(boardId),
+          userId: existingUser.id,
+          role
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              username: true,
+              imageUrl: true
+            }
+          }
+        }
+      });
+
+      return res.status(200).json({
+        status: 200,
+        message: "Existing user added to board successfully",
+        data: boardUser
+      });
+    }
+
+    // Create invitation for new user
+    const invitation = await prisma.boardInvitation.create({
+      data: {
+        email,
+        boardId: parseInt(boardId),
+        role,
+        invitedBy: requestorId,
+        token: generateInvitationToken(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+      }
+    });
+
+    // TODO: Send email invitation
+    console.log(`Invitation sent to ${email} for board ${board.title}`);
+
+    res.status(200).json({
+      status: 200,
+      message: "Invitation sent successfully",
+      data: invitation
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get board members with permissions
+const getBoardMembers = async (req, res) => {
+  const { boardId } = req.params;
+
+  try {
+    const boardUsers = await prisma.boardUser.findMany({
+      where: { boardId: parseInt(boardId) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            username: true,
+            imageUrl: true,
+            department: true,
+            efficiency: true,
+            isActive: true
+          }
+        }
+      },
+      orderBy: [
+        { role: 'desc' }, // Admins first
+        { user: { name: 'asc' } }
+      ]
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: boardUsers
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Helper function to generate invitation token
+const generateInvitationToken = () => {
+  return require('crypto').randomBytes(32).toString('hex');
+};
+
+module.exports = {
+  createTeam: exports.createTeam,
+  getTeam: exports.getTeam,
+  getTeams: exports.getTeam, // Alias for getTeam
+  inviteMember: exports.inviteMember,
+  joinTeam: exports.joinTeam,
+  getTeamMembers,
+  addUserToBoard,
+  removeUserFromBoard,
+  updateUserPermissions,
+  toggleUserStatus,
+  sendBoardInvitation,
+  getBoardMembers,
+  validateInviteCode: exports.validateInviteCode,
+  getTeamBoards: exports.getTeamBoards
+};
+
