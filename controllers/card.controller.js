@@ -4,7 +4,7 @@ const createCard = async (req, res) => {
   const { columnId } = req.query;
 
   try {
-    const { title, description, labels, attachments, dueDate, assigneeIds } =
+    const { title, description, labels, attachments, dueDate, assigneeIds, priority } =
       req.body;
 
     const lastCard = await prisma.card.findFirst({
@@ -24,6 +24,7 @@ const createCard = async (req, res) => {
         labels: labels,
         attachments: attachments,
         dueDate: dueDate,
+        priority: priority,
         order: newOrder,
         column: {
           connect: {

@@ -862,7 +862,7 @@ const toggleUserStatus = async (req, res) => {
     const requestor = await prisma.user.findUnique({
       where: { id: requestorId },
       include: {
-        captainOfTeam: true
+        captainOf: true
       }
     });
 
@@ -880,7 +880,7 @@ const toggleUserStatus = async (req, res) => {
 
     // Check permissions
     const canModify = requestor.role === 'ADMIN' || 
-                     (requestor.captainOfTeam && requestor.captainOfTeam.id === targetUser.teamId);
+                     (requestor.captainOf && requestor.captainOf.id === targetUser.teamId);
 
     if (!canModify) {
       return res.status(403).json({
