@@ -185,10 +185,86 @@ const deleteConversation = async (req, res) => {
   }
 };
 
+const improveWriting = async (req, res) => {
+  try {
+    const { text } = req.body;
+    
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({
+        error: "Text content is required for improvement"
+      });
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Cache-Control",
+    });
+
+    const prompt = `Please improve the following text by making it clearer, more professional, and better structured while maintaining the original meaning and tone. Only return the improved text without any explanations or additional comments:
+
+"${text}"`;
+
+    try {
+      const result = await model.generateContentStream(prompt);
+      let fullResponse = "";
+
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        fullResponse += chunkText;
+        
+        // Send chunk to client
+        res.write(
+          `data: ${JSON.stringify({
+            chunk: chunkText,
+            type: "content"
+          })}\n\n`
+        );
+      }
+
+      // Send completion signal
+      res.write(`data: ${JSON.stringify({ 
+        done: true, 
+        fullText: fullResponse,
+        type: "complete" 
+      })}\n\n`);
+      res.end();
+
+    } catch (modelError) {
+      console.error("Gemini model error:", modelError);
+      res.write(`data: ${JSON.stringify({ 
+        error: "Failed to improve text. Please try again.",
+        type: "error"
+      })}\n\n`);
+      res.end();
+    }
+
+  } catch (error) {
+    console.error("Improve Writing Error:", error);
+    
+    // If headers haven't been sent yet, send JSON error
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: error.message || "An error occurred while improving the text" 
+      });
+    }
+    
+    // If we're in streaming mode, send error as SSE
+    res.write(`data: ${JSON.stringify({ 
+      error: error.message || "An error occurred while improving the text",
+      type: "error"
+    })}\n\n`);
+    res.end();
+  }
+};
+
 module.exports = {
   talkWithAI,
   getMessages,
   getConversations,
   createAIConversation,
   deleteConversation,
+  improveWriting,
 };

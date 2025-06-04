@@ -8,6 +8,7 @@ router
   .post("/chat/stream", aiController.talkWithAI)
   .get("/chat/:conversationId/messages", aiController.getMessages)
   .get("/conversations", aiController.getConversations)
-  .delete("/conversation/:conversationId", aiController.deleteConversation);
+  .delete("/conversation/:conversationId", aiController.deleteConversation)
+  .post("/improve-writing", aiController.improveWriting);
 
 module.exports = router;
