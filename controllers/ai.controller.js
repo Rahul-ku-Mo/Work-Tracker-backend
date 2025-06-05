@@ -188,10 +188,65 @@ const deleteConversation = async (req, res) => {
 const improveWriting = async (req, res) => {
   try {
     const { text } = req.body;
+    const userId = req.user?.userId;
+
+    // Authentication check
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required"
+      });
+    }
     
-    if (!text || text.trim().length === 0) {
+    // Input validation and security checks
+    if (!text || typeof text !== 'string') {
       return res.status(400).json({
-        error: "Text content is required for improvement"
+        error: "Text content is required and must be a string"
+      });
+    }
+
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+      return res.status(400).json({
+        error: "Text content cannot be empty"
+      });
+    }
+
+    if (trimmedText.length > 10000) {
+      return res.status(400).json({
+        error: "Text content is too long. Maximum 10,000 characters allowed."
+      });
+    }
+
+    // Enhanced content filtering (prevent potentially harmful content)
+    const suspiciousPatterns = [
+      /prompt.*injection/i,
+      /ignore.*previous.*instructions/i,
+      /system.*prompt/i,
+      /jailbreak/i,
+      /<script/i,
+      /javascript:/i,
+      /eval\(/i,
+      /function\(/i,
+      /\$\{.*\}/i, // Template literals
+      /document\./i,
+      /window\./i,
+      /process\./i,
+      /require\(/i,
+      /import\s+/i,
+    ];
+
+    if (suspiciousPatterns.some(pattern => pattern.test(trimmedText))) {
+      console.warn(`Suspicious content detected from user ${userId}: ${trimmedText.substring(0, 100)}...`);
+      return res.status(400).json({
+        error: "Content contains potentially harmful patterns"
+      });
+    }
+
+    // Additional check for excessive special characters (potential injection attempts)
+    const specialCharCount = (trimmedText.match(/[<>{}[\]()$`]/g) || []).length;
+    if (specialCharCount > trimmedText.length * 0.1) {
+      return res.status(400).json({
+        error: "Content contains too many special characters"
       });
     }
 
@@ -203,9 +258,26 @@ const improveWriting = async (req, res) => {
       "Access-Control-Allow-Headers": "Cache-Control",
     });
 
-    const prompt = `Please improve the following text by making it clearer, more professional, and better structured while maintaining the original meaning and tone. Only return the improved text without any explanations or additional comments:
+    // Sanitize text for prompt injection prevention
+    const sanitizedText = trimmedText
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
 
-"${text}"`;
+    const prompt = `You are a professional writing assistant. Improve the following text by making it clearer, more professional, and better structured while maintaining the original meaning and tone.
+
+IMPORTANT FORMATTING RULES:
+- Return ONLY the improved text without any explanations, quotes, or additional comments
+- Preserve any existing markdown formatting (headers, lists, bold, italic, etc.)
+- If the original text has no markdown, return plain text
+- Maintain the same general structure and paragraph breaks
+- Do not add markdown if the original text was plain text
+- Do not wrap the response in quotes or code blocks
+
+Original text: "${sanitizedText}"
+
+Improved text:`;
 
     try {
       const result = await model.generateContentStream(prompt);
@@ -224,10 +296,13 @@ const improveWriting = async (req, res) => {
         );
       }
 
+      // Log usage for monitoring
+      console.log(`AI improve writing used by user ${userId}, text length: ${trimmedText.length}, response length: ${fullResponse.length}`);
+
       // Send completion signal
       res.write(`data: ${JSON.stringify({ 
         done: true, 
-        fullText: fullResponse,
+        fullText: fullResponse.trim(),
         type: "complete" 
       })}\n\n`);
       res.end();
@@ -247,13 +322,13 @@ const improveWriting = async (req, res) => {
     // If headers haven't been sent yet, send JSON error
     if (!res.headersSent) {
       return res.status(500).json({ 
-        error: error.message || "An error occurred while improving the text" 
+        error: "An error occurred while improving the text" 
       });
     }
     
     // If we're in streaming mode, send error as SSE
     res.write(`data: ${JSON.stringify({ 
-      error: error.message || "An error occurred while improving the text",
+      error: "An error occurred while improving the text",
       type: "error"
     })}\n\n`);
     res.end();
