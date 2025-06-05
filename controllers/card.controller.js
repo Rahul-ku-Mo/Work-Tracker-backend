@@ -56,6 +56,7 @@ const createCard = async (req, res) => {
 
 const updateCard = async (req, res) => {
   const { cardId } = req.params;
+  const { userId } = req.user;
   const {
     title,
     description,
@@ -84,6 +85,14 @@ const updateCard = async (req, res) => {
       });
     }
 
+    // Store previous data for notification comparison
+    const previousData = {
+      title: currentCard.title,
+      description: currentCard.description,
+      dueDate: currentCard.dueDate,
+      priority: currentCard.priority,
+    };
+
     let updatedLabels;
     if (newLabel && currentCard.labels.includes(newLabel)) {
       updatedLabels = currentCard.labels.filter((label) => label !== newLabel);
@@ -105,6 +114,7 @@ const updateCard = async (req, res) => {
       priority: priority ?? currentCard.priority,
     };
 
+    let wasAssigned = false;
     // Handle assignee assignment/unassignment
     if (assigneeId !== undefined) {
       if (assigneeId === null || assigneeId === "") {
@@ -124,6 +134,7 @@ const updateCard = async (req, res) => {
           updateData.assignees = {
             set: [{ id: assigneeId }], // Replace all assignees with this one
           };
+          wasAssigned = true;
         }
       }
     }
@@ -144,6 +155,41 @@ const updateCard = async (req, res) => {
         },
       },
     });
+
+    // Send notifications
+    const notificationController = require("./notificationController");
+    
+    // Send assignment notification if a new assignee was added
+    if (wasAssigned && assigneeId) {
+      await notificationController.notifyCardAssignment(
+        parseInt(cardId),
+        assigneeId,
+        userId
+      );
+    }
+
+    // Send update notification if any significant fields changed
+    const newData = {
+      title: updateData.title,
+      description: updateData.description,
+      dueDate: updateData.dueDate,
+      priority: updateData.priority,
+    };
+
+    const hasChanges = 
+      previousData.title !== newData.title ||
+      previousData.description !== newData.description ||
+      (previousData.dueDate?.getTime() !== newData.dueDate?.getTime()) ||
+      previousData.priority !== newData.priority;
+
+    if (hasChanges) {
+      await notificationController.notifyCardUpdate(
+        parseInt(cardId),
+        userId,
+        previousData,
+        newData
+      );
+    }
 
     res.status(200).json({
       status: 200,
@@ -352,6 +398,7 @@ const updateCardAnalytics = async (req, res) => {
 // Mark card as completed
 const markCardComplete = async (req, res) => {
   const { cardId } = req.params;
+  const { userId } = req.user;
 
   try {
     const card = await prisma.card.findUnique({
@@ -388,6 +435,13 @@ const markCardComplete = async (req, res) => {
         column: true,
       },
     });
+
+    // Send completion notification
+    const notificationController = require("./notificationController");
+    await notificationController.notifyCardCompletion(
+      parseInt(cardId),
+      userId
+    );
 
     res.status(200).json({
       status: 200,

@@ -193,6 +193,8 @@ model Notification {
   receiverId String
   receiver   User     @relation("receiver", fields: [receiverId], references: [id])
   message    Message
+  metadata   String?  // JSON string for additional notification data
+  isRead     Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -200,6 +202,13 @@ model Notification {
 enum Message {
   JOIN
   LEAVE
+  CARD_ASSIGNED
+  CARD_UPDATED
+  CARD_COMPLETED
+  CARD_COMMENTED
+  CARD_DUE_SOON
+  CARD_OVERDUE
+  MENTION
 }
 
 model AiConversation {

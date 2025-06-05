@@ -39,6 +39,14 @@ exports.createComment = async (req, res) => {
       },
     });
 
+    // Send comment notification
+    const notificationController = require("./notificationController");
+    await notificationController.notifyCardComment(
+      parseInt(cardId),
+      userId,
+      content
+    );
+
     res.status(201).json({
       status: 201,
       message: "Success",
@@ -46,6 +54,7 @@ exports.createComment = async (req, res) => {
     });
   } catch (error) {
     console.log(error);
+    res.status(500).json({ message: error.message });
   }
 };
 
