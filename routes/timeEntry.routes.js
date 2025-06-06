@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const timeEntryController = require("../controllers/timeEntry.controller");
+const { requireFeature } = require("../middleware/featureGating");
+
+// All time tracking features require pro+ subscription
+router.use(requireFeature('timeTracking'));
 
 // Start a new time entry
 router.post("/start", timeEntryController.startTimeEntry);

@@ -1,7 +1,11 @@
 const express = require("express");
 const router = express.Router();
+const { requireFeature } = require("../middleware/featureGating");
 
 const aiController = require("../controllers/ai.controller");
+
+// All AI features require pro+ subscription
+router.use(requireFeature('aiFeatures'));
 
 router
   .post("/chat/new", aiController.createAIConversation)

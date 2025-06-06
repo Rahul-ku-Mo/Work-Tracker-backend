@@ -1,12 +1,13 @@
 const express = require("express");
 const teamController = require("../controllers/team.controller");
+const { requireWithinLimits } = require("../middleware/featureGating");
 
 const router = express.Router();
 
 // Team routes
 router.route("/").get(teamController.getTeam).post(teamController.createTeam);
-router.route("/invite").post(teamController.inviteMember);
-router.route("/join").post(teamController.joinTeam);
+router.route("/invite").post(requireWithinLimits('teamMembers'), teamController.inviteMember);
+router.route("/join").post(requireWithinLimits('teamMembers'), teamController.joinTeam);
 router.route("/members").get(teamController.getTeamMembers);
 router.route("/:teamId/members").get(teamController.getTeamMembers);
 router.route("/boards").get(teamController.getTeamBoards);

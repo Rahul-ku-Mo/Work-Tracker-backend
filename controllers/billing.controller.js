@@ -1,5 +1,6 @@
 const stripeService = require('../services/stripeService');
 const { PrismaClient } = require('@prisma/client');
+const { getUsageStats } = require('../middleware/featureGating');
 const prisma = new PrismaClient();
 
 class BillingController {
@@ -182,50 +183,100 @@ class BillingController {
       const plans = [
         {
           id: 'free',
-          name: 'Starter',
+          name: 'Free Trial',
           description: 'Perfect for trying out PulseBoard',
           price: 0,
           currency: 'usd',
           interval: 'month',
           features: [
             '2 projects',
-            '5 team members',
-            '50 tasks per project',
+            '3 team members',
+            '25 tasks per project',
             'Basic task management',
             '7-day activity history',
             'Community support'
           ],
           limits: {
             projects: 2,
-            teamMembers: 5,
-            tasksPerProject: 50,
-            activityHistoryDays: 7
+            teamMembers: 3,
+            tasksPerProject: 25,
+            activityHistoryDays: 7,
+            storageGB: 1,
+            analytics: false,
+            timeTracking: false,
+            customFields: false,
+            aiFeatures: false,
+            prioritySupport: false
           }
         },
         {
           id: 'pro',
           name: 'Professional',
-          description: 'For growing teams and businesses',
-          price: 10,
+          description: 'For growing teams and small businesses',
+          price: 12,
           currency: 'usd',
           interval: 'month',
           stripePrice: process.env.STRIPE_PRICE_ID_PRO,
           features: [
             'Unlimited projects',
-            '25 team members',
+            '15 team members',
             'Unlimited tasks',
             'Advanced analytics & reporting',
             '90-day activity history',
-            'Priority email support',
             'Time tracking',
             'Custom fields',
-            'Basic integrations'
+            'AI-powered insights',
+            'Email support'
           ],
           limits: {
             projects: -1,
-            teamMembers: 25,
+            teamMembers: 15,
             tasksPerProject: -1,
-            activityHistoryDays: 90
+            activityHistoryDays: 90,
+            storageGB: 50,
+            analytics: true,
+            timeTracking: true,
+            customFields: true,
+            aiFeatures: true,
+            prioritySupport: false
+          }
+        },
+        {
+          id: 'enterprise',
+          name: 'Enterprise',
+          description: 'For large teams and organizations',
+          price: 25,
+          currency: 'usd',
+          interval: 'month',
+          stripePrice: process.env.STRIPE_PRICE_ID_ENTERPRISE,
+          features: [
+            'Unlimited projects',
+            'Unlimited team members',
+            'Unlimited tasks',
+            'Advanced analytics & reporting',
+            'Unlimited activity history',
+            'Time tracking',
+            'Custom fields',
+            'AI-powered insights',
+            'Advanced team management',
+            'Priority support',
+            'API access',
+            'SSO integration',
+            'Advanced security'
+          ],
+          limits: {
+            projects: -1,
+            teamMembers: -1,
+            tasksPerProject: -1,
+            activityHistoryDays: -1,
+            storageGB: -1,
+            analytics: true,
+            timeTracking: true,
+            customFields: true,
+            aiFeatures: true,
+            prioritySupport: true,
+            apiAccess: true,
+            ssoIntegration: true
           }
         }
       ];
@@ -368,6 +419,26 @@ class BillingController {
       console.log(`Subscription deleted: ${subscription.id}`);
     } catch (error) {
       console.error('Error handling subscription deleted:', error);
+    }
+  }
+
+  // Get usage statistics with plan limits
+  async getUsageStatistics(req, res) {
+    try {
+      const userId = req.user.id;
+      const stats = await getUsageStats(userId);
+      
+      res.json({
+        status: 200,
+        message: 'Usage statistics retrieved successfully',
+        data: stats
+      });
+    } catch (error) {
+      console.error('Error getting usage statistics:', error);
+      res.status(500).json({ 
+        status: 500,
+        error: 'Failed to get usage statistics' 
+      });
     }
   }
 }

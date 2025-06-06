@@ -27,4 +27,7 @@ router.post('/cancel-subscription', billingController.cancelSubscription);
 // Reactivate subscription
 router.post('/reactivate-subscription', billingController.reactivateSubscription);
 
+// Get usage statistics
+router.get('/usage-stats', billingController.getUsageStatistics);
+
 module.exports = router; 

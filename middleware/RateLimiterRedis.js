@@ -3,14 +3,14 @@ const { client } = require("../db");
 
 // General rate limiter
 const rateLimiter = new RateLimiterRedis({
-  points: 100, // Number of requests
+  points: 1000, // Number of requests (increased for development)
   duration: 10 * 60, // Per 10 minutes
   storeClient: client,
 });
 
 // AI-specific rate limiter (more restrictive)
 const aiRateLimiter = new RateLimiterRedis({
-  points: 20, // 20 AI requests
+  points: 100, // 100 AI requests (increased for development)
   duration: 60 * 60, // Per hour
   storeClient: client,
   keyPrefix: 'ai_limit',
@@ -18,7 +18,7 @@ const aiRateLimiter = new RateLimiterRedis({
 
 // Improve writing specific rate limiter (even more restrictive)
 const improveWritingRateLimiter = new RateLimiterRedis({
-  points: 10, // 10 improve writing requests
+  points: 50, // 50 improve writing requests (increased for development)
   duration: 60 * 60, // Per hour
   storeClient: client,
   keyPrefix: 'improve_writing_limit',

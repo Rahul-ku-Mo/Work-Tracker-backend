@@ -3,6 +3,7 @@ const boardController = require("../controllers/board.controller");
 const boardUserController = require("../controllers/boardUserController");
 const boardPermissionsController = require("../controllers/boardPermissions.controller");
 const { checkBoardAccess } = require("../middleware/boardAccess");
+const { requireWithinLimits } = require("../middleware/featureGating");
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const router = express.Router();
 router
   .route("/")
   .get(boardController.getBoards)
-  .post(boardController.createBoard);
+  .post(requireWithinLimits('projects'), boardController.createBoard);
 
 // Get user's accessible boards (no specific board access check needed)
 router.get("/accessible", boardPermissionsController.getUserAccessibleBoards);

@@ -2,9 +2,11 @@ const express = require("express");
 const router = express.Router();
 const analyticsController = require("../controllers/analytics.controller");
 const analyticsMiddleware = require("../middleware/analytics.middleware");
+const { requireFeature } = require("../middleware/featureGating");
 
-// Apply middleware to validate time range for all analytics routes
+// Apply middleware to validate time range and analytics feature access
 router.use(analyticsMiddleware.validateTimeRange);
+router.use(requireFeature('analytics'));
 
 // Card analytics routes
 router.get("/card/:cardId", analyticsController.getCardAnalytics);
