@@ -16,9 +16,13 @@ const onboardingController = require("../controllers/onboarding.controller");
 const awsRouter = require("./aws.routes");
 const analyticsRouter = require("./analytics.routes");
 const timeEntryRouter = require("./timeEntry.routes");
+const billingRouter = require("./billing.routes");
 
 // Auth routes
 router.use("/", authRouter);
+
+// Public billing routes (must be before auth middleware)
+router.use("/billing", billingRouter);
 
 // Protected routes
 router.use(authenticateToken);

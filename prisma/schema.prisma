@@ -61,6 +61,10 @@ model User {
   
   // Board invitations sent by this user
   sentBoardInvitations BoardInvitation[] @relation("BoardInvitationSender")
+  
+  // Billing related fields
+  stripeCustomerId     String?
+  subscription         Subscription?
 }
 
 model Team {
@@ -377,4 +381,29 @@ model UserPerformanceHistory {
 
   @@index([userId])
   @@index([date])
+}
+
+// ========== BILLING MODELS ==========
+
+model Subscription {
+  id                     String           @id @default(uuid())
+  userId                 String           @unique
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId   String           @unique
+  plan                   SubscriptionPlan
+  status                 String           // active, canceled, incomplete, etc.
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([stripeSubscriptionId])
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
 }

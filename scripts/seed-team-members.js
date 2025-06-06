@@ -48,35 +48,35 @@ async function seedTeamMembers() {
     // Create team members with unique emails
     const teamMembers = [
       {
-        email: 'sarah.frontend@eztrack.dev',
+        email: 'sarah.frontend@pulseboard.dev',
         name: 'Sarah Chen',
         username: 'sarah_chen',
         role: 'Frontend Developer',
         imageUrl: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face'
       },
       {
-        email: 'mike.backend@eztrack.dev',
+        email: 'mike.backend@pulseboard.dev',
         name: 'Mike Johnson',
         username: 'mike_johnson',
         role: 'Backend Developer',
         imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face'
       },
       {
-        email: 'emma.qa@eztrack.dev',
+        email: 'emma.qa@pulseboard.dev',
         name: 'Emma Wilson',
         username: 'emma_wilson',
         role: 'QA Engineer',
         imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face'
       },
       {
-        email: 'david.design@eztrack.dev',
+        email: 'david.design@pulseboard.dev',
         name: 'David Kim',
         username: 'david_kim',
         role: 'UI/UX Designer',
         imageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
       },
       {
-        email: 'alex.fullstack@eztrack.dev',
+        email: 'alex.fullstack@pulseboard.dev',
         name: 'Alex Rodriguez',
         username: 'alex_rodriguez',
         role: 'Full Stack Developer',

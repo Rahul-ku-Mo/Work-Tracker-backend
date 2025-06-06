@@ -17,9 +17,9 @@ class EmailService {
     const inviteLink = `${frontendUrl}/join?code=${joinCode}`;
     
     const mailOptions = {
-      from: `"${process.env.APP_NAME || 'EzTrack'}" <${process.env.SMTP_USER}>`,
+      from: `"${process.env.APP_NAME || 'PulseBoard'}" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `You're invited to join ${teamName} on EzTrack`,
+      subject: `You're invited to join ${teamName} on PulseBoard`,
       html: `
         <!DOCTYPE html>
         <html>
@@ -51,7 +51,7 @@ class EmailService {
             
             <div class="content">
               <h2>Hi there! 👋</h2>
-              <p><strong>${inviterName}</strong> has invited you to join their team on <strong>EzTrack</strong> - a powerful project management and time tracking platform.</p>
+              <p><strong>${inviterName}</strong> has invited you to join their team on <strong>PulseBoard</strong> - a powerful project management and time tracking platform.</p>
               
               <div class="invitation-box">
                 <div class="team-name">${teamName}</div>
@@ -60,7 +60,7 @@ class EmailService {
                 <a href="${inviteLink}" class="btn">Join Team Now</a>
               </div>
               
-              <h3>What you can do with EzTrack:</h3>
+              <h3>What you can do with PulseBoard:</h3>
               <ul style="line-height: 1.8; color: #4a5568;">
                 <li>📊 Track time on projects and tasks</li>
                 <li>📋 Manage boards and collaborate with team members</li>
@@ -86,7 +86,7 @@ class EmailService {
             </div>
             
             <div class="footer">
-              <p>© ${new Date().getFullYear()} EzTrack. All rights reserved.</p>
+              <p>© ${new Date().getFullYear()} PulseBoard. All rights reserved.</p>
               <p>Streamline your workflow, track your progress, achieve your goals.</p>
             </div>
           </div>
@@ -94,7 +94,7 @@ class EmailService {
         </html>
       `,
       text: `
-        You're invited to join ${teamName} on EzTrack!
+        You're invited to join ${teamName} on PulseBoard!
         
         ${inviterName} has invited you to join their team.
         
@@ -123,7 +123,7 @@ class EmailService {
 
   async sendBoardInvitation(email, boardName, teamName, inviteLink, inviterName, frontendUrl) {
     const mailOptions = {
-      from: `"${process.env.APP_NAME || 'EzTrack'}" <${process.env.SMTP_USER}>`,
+      from: `"${process.env.APP_NAME || 'PulseBoard'}" <${process.env.SMTP_USER}>`,
       to: email,
       subject: `You're invited to collaborate on ${boardName}`,
       html: `
@@ -178,7 +178,7 @@ class EmailService {
             </div>
             
             <div class="footer">
-              <p>© ${new Date().getFullYear()} EzTrack. All rights reserved.</p>
+              <p>© ${new Date().getFullYear()} PulseBoard. All rights reserved.</p>
               <p>Collaborate better, achieve more.</p>
             </div>
           </div>

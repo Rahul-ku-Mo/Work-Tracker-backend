@@ -82,7 +82,7 @@ app.use("/api/v1/pusher/auth", authenticatePusher);
 app.use("/api/v1", routes);
 
 app.listen(port, () => {
-  console.log(`Work-Tracker backend app listening on port ${port}`);
+  console.log(`PulseBoard backend app listening on port ${port}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
