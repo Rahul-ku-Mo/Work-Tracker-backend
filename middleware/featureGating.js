@@ -9,6 +9,7 @@ const PLAN_LIMITS = {
     tasksPerProject: 25,
     activityHistoryDays: 7,
     storageGB: 1,
+    imageUploads: 100,
     analytics: false,
     timeTracking: false,
     customFields: false,
@@ -21,6 +22,7 @@ const PLAN_LIMITS = {
     tasksPerProject: -1,
     activityHistoryDays: 90,
     storageGB: 50,
+    imageUploads: 1000,
     analytics: true,
     timeTracking: true,
     customFields: true,
@@ -33,13 +35,13 @@ const PLAN_LIMITS = {
     tasksPerProject: -1,
     activityHistoryDays: -1,
     storageGB: -1,
+    imageUploads: -1,
     analytics: true,
     timeTracking: true,
     customFields: true,
     aiFeatures: true,
     prioritySupport: true,
-    apiAccess: true,
-    ssoIntegration: true
+    prioritySupport: true
   }
 };
 
@@ -110,6 +112,14 @@ const isWithinLimits = async (userId, plan, limitType) => {
           }
         });
         currentUsage = user?.team?.members?.length || 0;
+        break;
+        
+      case 'imageUploads':
+        // Count images uploaded by this user (S3 keys in user's folder)
+        const imageCount = await prisma.imageUpload.count({
+          where: { userId }
+        });
+        currentUsage = imageCount;
         break;
         
       case 'tasksPerProject':
@@ -210,7 +220,7 @@ const getUsageStats = async (userId) => {
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
     
     // Get current usage
-    const [projectCount, user] = await Promise.all([
+    const [projectCount, user, imageCount] = await Promise.all([
       prisma.board.count({ where: { userId } }),
       prisma.user.findUnique({
         where: { id: userId },
@@ -221,7 +231,8 @@ const getUsageStats = async (userId) => {
             }
           }
         }
-      })
+      }),
+      prisma.imageUpload ? prisma.imageUpload.count({ where: { userId } }) : Promise.resolve(0)
     ]);
     
     const teamMemberCount = user?.team?.members?.length || 0;
@@ -240,6 +251,10 @@ const getUsageStats = async (userId) => {
         storageGB: {
           current: 0, // Implement storage tracking
           limit: limits.storageGB === -1 ? null : limits.storageGB
+        },
+        imageUploads: {
+          current: imageCount,
+          limit: limits.imageUploads === -1 ? null : limits.imageUploads
         }
       },
       features: {
@@ -247,9 +262,7 @@ const getUsageStats = async (userId) => {
         timeTracking: limits.timeTracking,
         customFields: limits.customFields,
         aiFeatures: limits.aiFeatures,
-        prioritySupport: limits.prioritySupport,
-        apiAccess: limits.apiAccess || false,
-        ssoIntegration: limits.ssoIntegration || false
+        prioritySupport: limits.prioritySupport
       }
     };
   } catch (error) {

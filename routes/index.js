@@ -24,6 +24,9 @@ router.use("/", authRouter);
 // Public billing routes (must be before auth middleware)
 router.use("/billing", billingRouter);
 
+// AWS routes with their own auth middleware
+router.use("/aws", awsRouter);
+
 // Protected routes
 router.use(authenticateToken);
 
@@ -41,7 +44,6 @@ router.use("/comments", commentRouter);
 router.use("/notifications", notificationRouter);
 router.use("/teams", teamRouter);
 router.use("/ai", aiRouter);
-router.use("/aws", awsRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/time-entries", timeEntryRouter);
 

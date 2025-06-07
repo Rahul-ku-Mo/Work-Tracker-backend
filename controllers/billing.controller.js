@@ -192,6 +192,7 @@ class BillingController {
             '2 projects',
             '3 team members',
             '25 tasks per project',
+            '100 image uploads',
             'Basic task management',
             '7-day activity history',
             'Community support'
@@ -202,6 +203,7 @@ class BillingController {
             tasksPerProject: 25,
             activityHistoryDays: 7,
             storageGB: 1,
+            imageUploads: 100, // ~50-100MB at average 500KB per image
             analytics: false,
             timeTracking: false,
             customFields: false,
@@ -218,9 +220,10 @@ class BillingController {
           interval: 'month',
           stripePrice: process.env.STRIPE_PRICE_ID_PRO,
           features: [
-            'Unlimited projects',
-            '15 team members',
-            'Unlimited tasks',
+            '100 projects',
+            '15 team members', 
+            '500 tasks per project',
+            '1,000 image uploads',
             'Advanced analytics & reporting',
             '90-day activity history',
             'Time tracking',
@@ -229,11 +232,12 @@ class BillingController {
             'Email support'
           ],
           limits: {
-            projects: -1,
+            projects: 100,
             teamMembers: 15,
-            tasksPerProject: -1,
+            tasksPerProject: 500,
             activityHistoryDays: 90,
             storageGB: 50,
+            imageUploads: 1000, // ~500MB-1GB storage
             analytics: true,
             timeTracking: true,
             customFields: true,
@@ -253,16 +257,14 @@ class BillingController {
             'Unlimited projects',
             'Unlimited team members',
             'Unlimited tasks',
+            'Unlimited image uploads',
             'Advanced analytics & reporting',
             'Unlimited activity history',
             'Time tracking',
             'Custom fields',
             'AI-powered insights',
             'Advanced team management',
-            'Priority support',
-            'API access',
-            'SSO integration',
-            'Advanced security'
+            'Priority support'
           ],
           limits: {
             projects: -1,
@@ -270,13 +272,12 @@ class BillingController {
             tasksPerProject: -1,
             activityHistoryDays: -1,
             storageGB: -1,
+            imageUploads: -1, // Unlimited
             analytics: true,
             timeTracking: true,
             customFields: true,
             aiFeatures: true,
-            prioritySupport: true,
-            apiAccess: true,
-            ssoIntegration: true
+            prioritySupport: true
           }
         }
       ];
