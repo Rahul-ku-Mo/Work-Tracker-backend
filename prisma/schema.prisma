@@ -64,7 +64,6 @@ model User {
   sentBoardInvitations BoardInvitation[] @relation("BoardInvitationSender")
   
   // Billing related fields
-  stripeCustomerId     String?
   subscription         Subscription?
 }
 
@@ -391,7 +390,6 @@ model Subscription {
   id                     String           @id @default(uuid())
   userId                 String           @unique
   user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stripeSubscriptionId   String           @unique
   plan                   SubscriptionPlan
   status                 String           // active, canceled, incomplete, etc.
   currentPeriodStart     DateTime
@@ -402,7 +400,7 @@ model Subscription {
   cancelAtPeriodEnd      Boolean          @default(false)
 
   @@index([userId])
-  @@index([stripeSubscriptionId])
+  @@index([paddleSubscriptionId])
   @@map("subscriptions")
 }
 

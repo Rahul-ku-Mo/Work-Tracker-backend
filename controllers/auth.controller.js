@@ -26,7 +26,29 @@ exports.createSendToken = (user, res) => {
 };
 
 exports.signup = async (req, res) => {
-  const { email, password, username, inviteCode } = req.body;
+  const { email, password, username, name, inviteCode } = req.body;
+
+  // Validate required fields
+  if (!email || !password) {
+    return res.status(400).json({ 
+      message: "We need your email and password to create your account" 
+    });
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ 
+      message: "That doesn't look like a valid email address" 
+    });
+  }
+
+  // Validate password strength
+  if (password.length < 6) {
+    return res.status(400).json({ 
+      message: "Your password needs to be at least 6 characters long" 
+    });
+  }
 
   //1.check for existing user
   const existingUser = await prisma.user.findUnique({
@@ -34,7 +56,9 @@ exports.signup = async (req, res) => {
   });
 
   if (existingUser) {
-    return res.status(400).json({ message: "User already exists" });
+    return res.status(400).json({ 
+      message: "Someone's already using that email address. Try signing in instead?" 
+    });
   }
 
   //2.if not an existing user hash the password and store it in the database
@@ -56,11 +80,39 @@ exports.signup = async (req, res) => {
       }
     }
 
+    // Set username to name if no username provided, or use provided username
+    let finalUsername = username || name || email.split('@')[0];
+    const finalName = name || username || email.split('@')[0];
+
+    // Clean username (remove spaces, special characters except underscore and dash)
+    finalUsername = finalUsername.replace(/[^a-zA-Z0-9_-]/g, '');
+    
+    // Ensure username uniqueness
+    if (finalUsername) {
+      let counter = 1;
+      let tempUsername = finalUsername;
+      
+      while (true) {
+        const existingUsername = await prisma.user.findUnique({
+          where: { username: tempUsername }
+        });
+        
+        if (!existingUsername) {
+          finalUsername = tempUsername;
+          break;
+        }
+        
+        tempUsername = `${finalUsername}${counter}`;
+        counter++;
+      }
+    }
+
     const user = await prisma.user.create({
       data: {
         email: email,
         password: cryptPassword,
-        username: username,
+        username: finalUsername,
+        name: finalName,
         role: teamToJoin ? "USER" : "ADMIN", // If joining via invite, make them USER, otherwise ADMIN
         teamId: teamToJoin ? teamToJoin.id : null, // Auto-join team if invite code is valid
       },
@@ -111,18 +163,18 @@ exports.signup = async (req, res) => {
     if (error.code === 'P2002') {
       if (error.meta?.target?.includes('email')) {
         return res.status(400).json({ 
-          message: "An account with this email already exists. Please try logging in instead." 
+          message: "Someone's already using that email address. Try signing in instead?" 
         });
       }
       if (error.meta?.target?.includes('username')) {
         return res.status(400).json({ 
-          message: "This username is already taken. Please choose a different one." 
+          message: "That username is already taken. How about trying a different one?" 
         });
       }
     }
     
     res.status(500).json({ 
-      message: "Account creation failed. Please check your information and try again." 
+      message: "Something went wrong creating your account. Please try again in a moment." 
     });
   }
 };
@@ -133,7 +185,7 @@ exports.login = async (req, res) => {
   if (!email || !password)
     return res
       .status(400)
-      .json({ status: 400, message: "Please provide a email and password" });
+      .json({ status: 400, message: "We need your email and password to sign you in" });
 
   const user = await prisma.user.findUnique({
     where: { email: email },
@@ -151,14 +203,14 @@ exports.login = async (req, res) => {
   if (!user)
     return res
       .status(401)
-      .json({ status: 401, message: "Invalid email. Check again!" });
+      .json({ status: 401, message: "We couldn't find an account with that email address" });
 
   const passwordMatch = await validatePassword(password, user.password);
 
   if (!passwordMatch) {
     return res
       .status(401)
-      .json({ status: 401, message: "Invalid password. Check again!" });
+      .json({ status: 401, message: "That password doesn't match our records" });
   }
 
   const accesstoken = this.createSendToken(user, res);
@@ -187,10 +239,13 @@ exports.oauthGoogleLogin = async (req, res) => {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri:
-          process.env.GOOGLE_REDIRECT_URI ||
-          "http://localhost:5173/auth/google/callback",
+        redirect_uri: process.env.GOOGLE_REDIRECT_URI || "http://localhost:5173/auth/google/callback",
         grant_type: "authorization_code",
+      },
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       }
     );
 
@@ -237,14 +292,29 @@ exports.oauthGoogleLogin = async (req, res) => {
 
     // If user does not exist, create a new user
     if (!existingUser) {
-      const username = `${googleUser.name}_worktracker`; // Create username
+      // Create username from name, fallback to email prefix
+      let baseUsername = googleUser.name?.replace(/\s+/g, '') || googleUser.email.split('@')[0];
+      let finalUsername = baseUsername;
+      
+      // Check if username is taken and append number if necessary
+      let counter = 1;
+      while (true) {
+        const existingUsername = await prisma.user.findUnique({
+          where: { username: finalUsername }
+        });
+        
+        if (!existingUsername) break;
+        
+        finalUsername = `${baseUsername}${counter}`;
+        counter++;
+      }
 
       existingUser = await prisma.user.create({
         data: {
           email: googleUser.email,
           imageUrl: googleUser.picture,
           name: googleUser.name,
-          username: username,
+          username: finalUsername,
           role: "ADMIN",
         },
         select: {

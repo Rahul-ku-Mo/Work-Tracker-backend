@@ -105,7 +105,7 @@ const realisticCards = [
   },
   {
     title: 'Payment Gateway Integration',
-    description: 'Integrate multiple payment gateways including Stripe, PayPal, and Apple Pay to provide flexible payment options for users. Implementation should include secure payment processing, webhook handling, subscription management, refund processing, and comprehensive error handling. Ensure PCI compliance, implement fraud detection, create payment analytics dashboards, and support multiple currencies. Include thorough testing with sandbox environments.',
+        description: 'Integrate multiple payment gateways including Paddle, PayPal, and Apple Pay to provide flexible payment options for users. Implementation should include secure payment processing, webhook handling, subscription management, refund processing, and comprehensive error handling. Ensure PCI compliance, implement fraud detection, create payment analytics dashboards, and support multiple currencies. Include thorough testing with sandbox environments.',
     priority: 'urgent',
     labels: ['Backend', 'Payment', 'Integration'],
     dueDate: new Date('2024-01-26T17:00:00Z'),
