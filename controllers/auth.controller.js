@@ -105,7 +105,25 @@ exports.signup = async (req, res) => {
       accesstoken,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Signup error:', error);
+    
+    // Handle specific database errors
+    if (error.code === 'P2002') {
+      if (error.meta?.target?.includes('email')) {
+        return res.status(400).json({ 
+          message: "An account with this email already exists. Please try logging in instead." 
+        });
+      }
+      if (error.meta?.target?.includes('username')) {
+        return res.status(400).json({ 
+          message: "This username is already taken. Please choose a different one." 
+        });
+      }
+    }
+    
+    res.status(500).json({ 
+      message: "Account creation failed. Please check your information and try again." 
+    });
   }
 };
 
@@ -119,6 +137,15 @@ exports.login = async (req, res) => {
 
   const user = await prisma.user.findUnique({
     where: { email: email },
+    include: {
+      team: {
+        select: {
+          id: true,
+          name: true,
+          joinCode: true
+        }
+      }
+    }
   });
 
   if (!user)
@@ -198,6 +225,13 @@ exports.oauthGoogleLogin = async (req, res) => {
         updatedAt: true,
         isPaidUser: true,
         password: false, // Exclude password
+        team: {
+          select: {
+            id: true,
+            name: true,
+            joinCode: true
+          }
+        }
       },
     });
 
@@ -231,6 +265,13 @@ exports.oauthGoogleLogin = async (req, res) => {
           role: true,
           updatedAt: true,
           password: false, // Exclude password
+          team: {
+            select: {
+              id: true,
+              name: true,
+              joinCode: true
+            }
+          }
         },
       });
     }
@@ -244,9 +285,23 @@ exports.oauthGoogleLogin = async (req, res) => {
     });
   } catch (error) {
     console.error("Error during Google login:", error);
-    return res
-      .status(500)
-      .json({ message: "An error occurred during Google login." });
+    
+    // Handle specific Google OAuth errors
+    if (error.response?.status === 400) {
+      return res.status(400).json({ 
+        message: "Invalid Google authorization code. Please try signing in again." 
+      });
+    }
+    
+    if (error.response?.status === 401) {
+      return res.status(401).json({ 
+        message: "Google authentication failed. Please check your credentials and try again." 
+      });
+    }
+    
+    return res.status(500).json({ 
+      message: "Google sign-in is temporarily unavailable. Please try again or use email/password." 
+    });
   }
 };
 
@@ -271,6 +326,10 @@ exports.verifyTokenAndRole = async (req, res) => {
           role: true,
         },
       });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found", data: null });
+      }
 
       return res.status(200).json({ message: "success", data: user.role });
     });

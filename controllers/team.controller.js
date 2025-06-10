@@ -499,7 +499,7 @@ exports.validateInviteCode = async (req, res) => {
   }
 };
 
-// Get team boards - boards created by team members
+// Get team boards - boards accessible by team members
 exports.getTeamBoards = async (req, res) => {
   try {
     const userId = req.user?.userId;
@@ -524,16 +524,21 @@ exports.getTeamBoards = async (req, res) => {
       return res.status(404).json({
         status: 404,
         message: "No team found for user",
+        data: []
       });
     }
 
     const teamMemberIds = user.team.members.map(member => member.id);
 
-    // Get boards created by team members
+    // Get boards that team members have access to through BoardUser relationships
     const boards = await prisma.board.findMany({
       where: {
-        userId: {
-          in: teamMemberIds
+        members: {
+          some: {
+            userId: {
+              in: teamMemberIds
+            }
+          }
         }
       },
       select: {
@@ -542,7 +547,18 @@ exports.getTeamBoards = async (req, res) => {
         colorName: true,
         colorValue: true,
         userId: true,
-        createdAt: true
+        createdAt: true,
+        members: {
+          where: {
+            userId: {
+              in: teamMemberIds
+            }
+          },
+          select: {
+            userId: true,
+            role: true
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'

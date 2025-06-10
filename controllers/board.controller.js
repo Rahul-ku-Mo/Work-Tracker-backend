@@ -34,23 +34,29 @@ exports.getBoards = async (req, res) => {
       },
       include: {
         members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                imageUrl: true,
-              },
-            },
-          },
+          where: { userId: userId },
+          select: { role: true, isFavorite: true }
         },
+        user: {
+          select: {
+            name: true,
+            email: true,
+          }
+        }
       },
     });
+
+    const boardsWithRole = boards.map(board => ({
+      ...board,
+      userRole: board.members[0]?.role,
+      isFavorite: board.members[0]?.isFavorite,
+      members: undefined // Remove members array from response
+    }));
 
     res.status(200).json({
       status: 200,
       message: "Success",
-      data: boards,
+      data: boardsWithRole,
     });
   } catch (error) {
     console.error(error);
@@ -235,6 +241,111 @@ const createTeam = async (req, res) => {
     });
   } catch (e) {
     console.error(e);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+// Get favorite boards for a user
+exports.getFavoriteBoards = async (req, res) => {
+  const { userId } = req.user;
+
+  try {
+    const favoriteBoards = await prisma.board.findMany({
+      where: {
+        members: {
+          some: {
+            userId: userId,
+            isFavorite: true,
+          },
+        },
+      },
+      include: {
+        members: {
+          where: { userId: userId },
+          select: { role: true, isFavorite: true }
+        },
+        user: {
+          select: {
+            name: true,
+            email: true,
+          }
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+
+    const boardsWithRole = favoriteBoards.map(board => ({
+      ...board,
+      userRole: board.members[0]?.role,
+      isFavorite: board.members[0]?.isFavorite,
+      members: undefined // Remove members array from response
+    }));
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: boardsWithRole,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+// Toggle favorite status for a board
+exports.toggleBoardFavorite = async (req, res) => {
+  const { boardId } = req.params;
+  const { userId } = req.user;
+
+  try {
+    // Check if user has access to the board
+    const boardUser = await prisma.boardUser.findFirst({
+      where: {
+        boardId: parseInt(boardId),
+        userId: userId,
+      },
+    });
+
+    if (!boardUser) {
+      return res.status(403).json({
+        status: 403,
+        message: "You don't have access to this board",
+      });
+    }
+
+    // Toggle favorite status
+    const updatedBoardUser = await prisma.boardUser.update({
+      where: {
+        id: boardUser.id,
+      },
+      data: {
+        isFavorite: !boardUser.isFavorite,
+      },
+      include: {
+        board: {
+          select: {
+            id: true,
+            title: true,
+            colorValue: true,
+            colorName: true,
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: updatedBoardUser.isFavorite ? "Board added to favorites" : "Board removed from favorites",
+      data: {
+        boardId: parseInt(boardId),
+        isFavorite: updatedBoardUser.isFavorite,
+        board: updatedBoardUser.board
+      },
+    });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };

@@ -1,6 +1,6 @@
-const stripeService = require('../services/stripeService');
 const { PrismaClient } = require('@prisma/client');
 const { getUsageStats } = require('../middleware/featureGating');
+const paddleService = require('../services/paddleService');
 const prisma = new PrismaClient();
 
 class BillingController {
@@ -10,43 +10,45 @@ class BillingController {
       const { priceId, successUrl, cancelUrl } = req.body;
       const userId = req.user.id;
 
-      // Get or create Stripe customer
+      if (!priceId) {
+        return res.status(400).json({ error: 'Price ID is required' });
+      }
+
+      // Get or create user
       const user = await prisma.user.findUnique({
-        where: { id: userId }
+        where: { id: userId },
+        select: { id: true, email: true, name: true, paddleCustomerId: true }
       });
 
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      let customerId = user.stripeCustomerId;
-
-      // Create Stripe customer if doesn't exist
+      // Create Paddle customer if not exists
+      let customerId = user.paddleCustomerId;
       if (!customerId) {
-        const customer = await stripeService.createCustomer(
-          user.email,
-          user.name,
-          { userId: userId.toString() }
-        );
-        customerId = customer.id;
+        customerId = await paddleService.createCustomer({
+          email: user.email,
+          name: user.name || user.email.split('@')[0],
+          userId: user.id
+        });
 
-        // Update user with Stripe customer ID
+        // Save customer ID to user
         await prisma.user.update({
           where: { id: userId },
-          data: { stripeCustomerId: customerId }
+          data: { paddleCustomerId: customerId }
         });
       }
 
       // Create checkout session
-      const session = await stripeService.createCheckoutSession(
-        customerId,
+      const checkout = await paddleService.createCheckoutSession({
         priceId,
-        successUrl,
-        cancelUrl,
-        { userId: userId.toString() }
-      );
+        customerId,
+        successUrl: successUrl || `${process.env.FRONTEND_URL}/billing?success=true`,
+        cancelUrl: cancelUrl || `${process.env.FRONTEND_URL}/billing?canceled=true`
+      });
 
-      res.json({ sessionId: session.id, url: session.url });
+      res.json({ url: checkout.url });
     } catch (error) {
       console.error('Error creating checkout session:', error);
       res.status(500).json({ error: error.message });
@@ -60,19 +62,20 @@ class BillingController {
       const userId = req.user.id;
 
       const user = await prisma.user.findUnique({
-        where: { id: userId }
+        where: { id: userId },
+        select: { paddleCustomerId: true }
       });
 
-      if (!user || !user.stripeCustomerId) {
-        return res.status(404).json({ error: 'No billing information found' });
+      if (!user?.paddleCustomerId) {
+        return res.status(400).json({ error: 'No billing account found' });
       }
 
-      const session = await stripeService.createBillingPortalSession(
-        user.stripeCustomerId,
-        returnUrl
+      const portalUrl = await paddleService.getCustomerPortalUrl(
+        user.paddleCustomerId,
+        returnUrl || `${process.env.FRONTEND_URL}/billing`
       );
 
-      res.json({ url: session.url });
+      res.json({ url: portalUrl });
     } catch (error) {
       console.error('Error creating billing portal session:', error);
       res.status(500).json({ error: error.message });
@@ -95,7 +98,7 @@ class BillingController {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // If no subscription, return free plan
+      // For users without subscription, return free plan
       if (!user.subscription) {
         return res.json({
           plan: 'free',
@@ -105,15 +108,12 @@ class BillingController {
         });
       }
 
-      // Get current subscription from Stripe
-      const subscription = await stripeService.getSubscription(user.subscription.stripeSubscriptionId);
-
       res.json({
-        plan: user.subscription.plan,
-        status: subscription.status,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        subscriptionId: subscription.id
+        plan: user.subscription.plan || 'free',
+        status: user.subscription.status || 'active',
+        currentPeriodEnd: user.subscription.currentPeriodEnd,
+        cancelAtPeriodEnd: user.subscription.cancelAtPeriodEnd || false,
+        subscriptionId: user.subscription.paddleSubscriptionId
       });
     } catch (error) {
       console.error('Error getting subscription status:', error);
@@ -128,21 +128,22 @@ class BillingController {
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: {
-          subscription: true
-        }
+        include: { subscription: true }
       });
 
-      if (!user || !user.subscription) {
-        return res.status(404).json({ error: 'No active subscription found' });
+      if (!user?.subscription?.paddleSubscriptionId) {
+        return res.status(400).json({ error: 'No active subscription found' });
       }
 
-      const subscription = await stripeService.cancelSubscription(user.subscription.stripeSubscriptionId);
+      await paddleService.cancelSubscription(user.subscription.paddleSubscriptionId);
 
-      res.json({
-        message: 'Subscription will be cancelled at the end of the current period',
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+      // Update local subscription status
+      await prisma.subscription.update({
+        where: { userId },
+        data: { cancelAtPeriodEnd: true }
       });
+
+      res.json({ message: 'Subscription canceled successfully' });
     } catch (error) {
       console.error('Error canceling subscription:', error);
       res.status(500).json({ error: error.message });
@@ -156,21 +157,22 @@ class BillingController {
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: {
-          subscription: true
-        }
+        include: { subscription: true }
       });
 
-      if (!user || !user.subscription) {
-        return res.status(404).json({ error: 'No subscription found' });
+      if (!user?.subscription?.paddleSubscriptionId) {
+        return res.status(400).json({ error: 'No subscription found' });
       }
 
-      const subscription = await stripeService.reactivateSubscription(user.subscription.stripeSubscriptionId);
+      await paddleService.resumeSubscription(user.subscription.paddleSubscriptionId);
 
-      res.json({
-        message: 'Subscription reactivated successfully',
-        status: subscription.status
+      // Update local subscription status
+      await prisma.subscription.update({
+        where: { userId },
+        data: { cancelAtPeriodEnd: false }
       });
+
+      res.json({ message: 'Subscription reactivated successfully' });
     } catch (error) {
       console.error('Error reactivating subscription:', error);
       res.status(500).json({ error: error.message });
@@ -199,86 +201,72 @@ class BillingController {
           ],
           limits: {
             projects: 2,
-            teamMembers: 3,
+            members: 3,
             tasksPerProject: 25,
-            activityHistoryDays: 7,
             storageGB: 1,
-            imageUploads: 100, // ~50-100MB at average 500KB per image
-            analytics: false,
-            timeTracking: false,
-            customFields: false,
-            aiFeatures: false,
-            prioritySupport: false
-          }
+            activityHistoryDays: 7
+          },
+          popular: false
         },
         {
           id: 'pro',
           name: 'Professional',
-          description: 'For growing teams and small businesses',
-          price: 12,
+          description: 'For growing teams and businesses',
+          price: 9.99,
           currency: 'usd',
           interval: 'month',
-          stripePrice: process.env.STRIPE_PRICE_ID_PRO,
+          paddlePrice: process.env.PADDLE_PRICE_ID_PRO,
           features: [
-            '100 projects',
-            '15 team members', 
-            '500 tasks per project',
-            '1,000 image uploads',
-            'Advanced analytics & reporting',
-            '90-day activity history',
-            'Time tracking',
-            'Custom fields',
-            'AI-powered insights',
-            'Email support'
+            '10 projects',
+            '15 team members',
+            'Unlimited tasks',
+            '10GB storage',
+            'Advanced task management',
+            'Team collaboration features',
+            '30-day activity history',
+            'Priority email support',
+            'Advanced analytics',
+            'Custom project templates'
           ],
           limits: {
-            projects: 100,
-            teamMembers: 15,
-            tasksPerProject: 500,
-            activityHistoryDays: 90,
-            storageGB: 50,
-            imageUploads: 1000, // ~500MB-1GB storage
-            analytics: true,
-            timeTracking: true,
-            customFields: true,
-            aiFeatures: true,
-            prioritySupport: false
-          }
+            projects: 10,
+            members: 15,
+            tasksPerProject: -1, // unlimited
+            storageGB: 10,
+            activityHistoryDays: 30
+          },
+          popular: true
         },
         {
           id: 'enterprise',
-          name: 'Enterprise',
-          description: 'For large teams and organizations',
-          price: 25,
+          name: 'Business',
+          description: 'For larger teams with advanced needs',
+          price: 29.99,
           currency: 'usd',
           interval: 'month',
-          stripePrice: process.env.STRIPE_PRICE_ID_ENTERPRISE,
+          paddlePrice: process.env.PADDLE_PRICE_ID_BUSINESS,
           features: [
             'Unlimited projects',
-            'Unlimited team members',
+            '50+ team members',
             'Unlimited tasks',
-            'Unlimited image uploads',
-            'Advanced analytics & reporting',
+            '100GB storage',
+            'Full feature access',
+            'Advanced team collaboration',
             'Unlimited activity history',
-            'Time tracking',
-            'Custom fields',
-            'AI-powered insights',
-            'Advanced team management',
-            'Priority support'
+            '24/7 phone & email support',
+            'Advanced analytics & reporting',
+            'Custom integrations',
+            'SSO & advanced security',
+            'Dedicated account manager'
           ],
           limits: {
-            projects: -1,
-            teamMembers: -1,
-            tasksPerProject: -1,
-            activityHistoryDays: -1,
-            storageGB: -1,
-            imageUploads: -1, // Unlimited
-            analytics: true,
-            timeTracking: true,
-            customFields: true,
-            aiFeatures: true,
-            prioritySupport: true
-          }
+            projects: -1, // unlimited
+            members: -1, // unlimited
+            tasksPerProject: -1, // unlimited
+            storageGB: 100,
+            activityHistoryDays: -1 // unlimited
+          },
+          popular: false
         }
       ];
 
@@ -289,157 +277,176 @@ class BillingController {
     }
   }
 
-  // Stripe webhook handler
+  // Handle Paddle webhooks
   async handleWebhook(req, res) {
     try {
-      const signature = req.headers['stripe-signature'];
-      const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      const signature = req.headers['paddle-signature'];
+      const body = req.body;
 
-      const event = stripeService.constructWebhookEvent(
-        req.body,
-        signature,
-        endpointSecret
-      );
+      // Verify webhook signature
+      if (!paddleService.verifyWebhookSignature(body, signature)) {
+        return res.status(400).json({ error: 'Invalid webhook signature' });
+      }
 
-      // Handle the event
-      switch (event.type) {
+      const event = JSON.parse(body);
+
+      switch (event.event_type) {
         case 'checkout.session.completed':
-          await this.handleCheckoutCompleted(event.data.object);
+          await this.handleCheckoutCompleted(event.data);
+          break;
+        
+        case 'subscription.created':
+          await this.handleSubscriptionCreated(event.data);
           break;
 
-        case 'invoice.payment_succeeded':
-          await this.handlePaymentSucceeded(event.data.object);
+        case 'subscription.updated':
+          await this.handleSubscriptionUpdated(event.data);
           break;
 
-        case 'customer.subscription.updated':
-          await this.handleSubscriptionUpdated(event.data.object);
+        case 'subscription.canceled':
+          await this.handleSubscriptionCanceled(event.data);
           break;
 
-        case 'customer.subscription.deleted':
-          await this.handleSubscriptionDeleted(event.data.object);
+        case 'subscription.paused':
+          await this.handleSubscriptionPaused(event.data);
+          break;
+
+        case 'subscription.resumed':
+          await this.handleSubscriptionResumed(event.data);
           break;
 
         default:
-          console.log(`Unhandled event type ${event.type}`);
+          console.log(`Unhandled webhook event: ${event.event_type}`);
       }
 
       res.json({ received: true });
     } catch (error) {
       console.error('Error handling webhook:', error);
-      res.status(400).json({ error: error.message });
+      res.status(500).json({ error: error.message });
     }
   }
 
-  // Handle successful checkout
-  async handleCheckoutCompleted(session) {
+  // Webhook handlers
+  async handleCheckoutCompleted(data) {
+    // Initial checkout completion - subscription will be created in separate event
+    console.log('Checkout completed:', data.id);
+  }
+
+  async handleSubscriptionCreated(data) {
     try {
-      const userId = parseInt(session.metadata.userId);
-      const subscriptionId = session.subscription;
-
-      const subscription = await stripeService.getSubscription(subscriptionId);
-
-      let plan = 'free';
-      if (subscription.items.data[0].price.id === process.env.STRIPE_PRICE_ID_PRO) {
-        plan = 'pro';
+      const userId = data.custom_data?.user_id;
+      if (!userId) {
+        console.error('No user ID in subscription data');
+        return;
       }
 
+      // Determine plan based on price ID
+      let plan = 'free';
+      if (data.items?.length > 0) {
+        const priceId = data.items[0].price.id;
+        if (priceId === process.env.PADDLE_PRICE_ID_PRO) {
+          plan = 'pro';
+        } else if (priceId === process.env.PADDLE_PRICE_ID_BUSINESS) {
+          plan = 'enterprise';
+        }
+      }
+
+      // Create or update subscription
       await prisma.subscription.upsert({
         where: { userId },
         update: {
-          stripeSubscriptionId: subscriptionId,
           plan,
-          status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          status: data.status,
+          paddleSubscriptionId: data.id,
+          currentPeriodEnd: new Date(data.current_billing_period?.ends_at),
+          cancelAtPeriodEnd: false
         },
         create: {
           userId,
-          stripeSubscriptionId: subscriptionId,
           plan,
-          status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          status: data.status,
+          paddleSubscriptionId: data.id,
+          currentPeriodEnd: new Date(data.current_billing_period?.ends_at),
+          cancelAtPeriodEnd: false
         }
       });
 
-      console.log(`Subscription created/updated for user ${userId}`);
+      console.log(`Subscription created for user ${userId}: ${plan}`);
     } catch (error) {
-      console.error('Error handling checkout completed:', error);
+      console.error('Error handling subscription created:', error);
     }
   }
 
-  // Handle successful payment
-  async handlePaymentSucceeded(invoice) {
+  async handleSubscriptionUpdated(data) {
     try {
-      const subscriptionId = invoice.subscription;
-      const subscription = await stripeService.getSubscription(subscriptionId);
-
-      await prisma.subscription.updateMany({
-        where: { stripeSubscriptionId: subscriptionId },
+      await prisma.subscription.update({
+        where: { paddleSubscriptionId: data.id },
         data: {
-          status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          status: data.status,
+          currentPeriodEnd: new Date(data.current_billing_period?.ends_at)
         }
       });
 
-      console.log(`Payment succeeded for subscription ${subscriptionId}`);
-    } catch (error) {
-      console.error('Error handling payment succeeded:', error);
-    }
-  }
-
-  // Handle subscription updated
-  async handleSubscriptionUpdated(subscription) {
-    try {
-      await prisma.subscription.updateMany({
-        where: { stripeSubscriptionId: subscription.id },
-        data: {
-          status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-        }
-      });
-
-      console.log(`Subscription updated: ${subscription.id}`);
+      console.log(`Subscription updated: ${data.id}`);
     } catch (error) {
       console.error('Error handling subscription updated:', error);
     }
   }
 
-  // Handle subscription deleted
-  async handleSubscriptionDeleted(subscription) {
+  async handleSubscriptionCanceled(data) {
     try {
-      await prisma.subscription.updateMany({
-        where: { stripeSubscriptionId: subscription.id },
+      await prisma.subscription.update({
+        where: { paddleSubscriptionId: data.id },
         data: {
-          status: 'canceled'
+          status: 'canceled',
+          cancelAtPeriodEnd: true
         }
       });
 
-      console.log(`Subscription deleted: ${subscription.id}`);
+      console.log(`Subscription canceled: ${data.id}`);
     } catch (error) {
-      console.error('Error handling subscription deleted:', error);
+      console.error('Error handling subscription canceled:', error);
     }
   }
 
-  // Get usage statistics with plan limits
+  async handleSubscriptionPaused(data) {
+    try {
+      await prisma.subscription.update({
+        where: { paddleSubscriptionId: data.id },
+        data: { status: 'paused' }
+      });
+
+      console.log(`Subscription paused: ${data.id}`);
+    } catch (error) {
+      console.error('Error handling subscription paused:', error);
+    }
+  }
+
+  async handleSubscriptionResumed(data) {
+    try {
+      await prisma.subscription.update({
+        where: { paddleSubscriptionId: data.id },
+        data: { 
+          status: 'active',
+          cancelAtPeriodEnd: false
+        }
+      });
+
+      console.log(`Subscription resumed: ${data.id}`);
+    } catch (error) {
+      console.error('Error handling subscription resumed:', error);
+    }
+  }
+
+  // Get usage statistics for current user
   async getUsageStatistics(req, res) {
     try {
       const userId = req.user.id;
       const stats = await getUsageStats(userId);
-      
-      res.json({
-        status: 200,
-        message: 'Usage statistics retrieved successfully',
-        data: stats
-      });
+      res.json(stats);
     } catch (error) {
       console.error('Error getting usage statistics:', error);
-      res.status(500).json({ 
-        status: 500,
-        error: 'Failed to get usage statistics' 
-      });
+      res.status(500).json({ error: error.message });
     }
   }
 }

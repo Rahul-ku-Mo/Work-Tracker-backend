@@ -45,7 +45,7 @@ model User {
   Board                Board[]
   AiConversation       AiConversation[]
   imageUploads         ImageUpload[]        @relation("ImageUploads")
-  
+  paddleCustomerId     String?            @unique
   
   // Team relationship - a user belongs to one team
   team                 Team?            @relation("TeamMembers", fields: [teamId], references: [id])
@@ -102,14 +102,15 @@ model Board {
 
 // New model to manage board access
 model BoardUser {
-  id        String    @id @default(uuid())
-  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  boardId   Int
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  role      BoardRole @default(MEMBER)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  board      Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId    Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  role       BoardRole @default(MEMBER)
+  isFavorite Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@unique([boardId, userId])
 }
@@ -397,9 +398,12 @@ model Subscription {
   currentPeriodEnd       DateTime
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
+  paddleSubscriptionId   String?          @unique
+  cancelAtPeriodEnd      Boolean          @default(false)
 
   @@index([userId])
   @@index([stripeSubscriptionId])
+  @@map("subscriptions")
 }
 
 enum SubscriptionPlan {

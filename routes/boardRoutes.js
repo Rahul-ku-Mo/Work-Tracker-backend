@@ -13,6 +13,15 @@ router
   .get(boardController.getBoards)
   .post(requireWithinLimits('projects'), boardController.createBoard);
 
+// Favorites routes
+router
+  .route("/favorites")
+  .get(boardController.getFavoriteBoards);
+
+router
+  .route("/:boardId/favorite")
+  .post(boardController.toggleBoardFavorite);
+
 // Get user's accessible boards (no specific board access check needed)
 router.get("/accessible", boardPermissionsController.getUserAccessibleBoards);
 
