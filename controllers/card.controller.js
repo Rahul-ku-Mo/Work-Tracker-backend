@@ -109,7 +109,7 @@ const updateCard = async (req, res) => {
       columnId: columnId ? parseInt(columnId) : currentCard.columnId,
       labels: updatedLabels,
       attachments: attachments ?? currentCard.attachments,
-      dueDate: dueDate ? new Date(dueDate) : currentCard.dueDate,
+      dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : currentCard.dueDate,
       order: order ?? currentCard.order,
       priority: priority ?? currentCard.priority,
     };
