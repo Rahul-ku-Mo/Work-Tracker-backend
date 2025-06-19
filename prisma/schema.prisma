@@ -65,6 +65,10 @@ model User {
   
   // Billing related fields
   subscription         Subscription?
+  
+  // Notes related relations
+  noteCategories       NoteCategory[] @relation("UserNoteCategories")
+  notes                Note[]         @relation("UserNotes")
 }
 
 model Team {
@@ -410,7 +414,6 @@ enum SubscriptionPlan {
   TEAM
   ENTERPRISE
 }
-
 // Image Upload tracking for billing purposes
 model ImageUpload {
   id        String   @id @default(uuid())
@@ -426,3 +429,46 @@ model ImageUpload {
   @@index([userId])
   @@index([createdAt])
 }
+
+// ========== NOTES MODELS ==========
+
+model NoteCategory {
+  id          String   @id @default(uuid())
+  name        String   // Category name like "Plan", "Schedule", etc.
+  slug        String   // URL-friendly version like "plan", "schedule"
+  hoverColor  String?  // CSS hover color for UI
+  userId      String   // Owner of the category
+  user        User     @relation("UserNoteCategories", fields: [userId], references: [id], onDelete: Cascade)
+  notes       Note[]   // Notes within this category
+  isDefault   Boolean  @default(false) // Whether it's a default category
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, slug]) // User can't have duplicate slugs
+  @@index([userId])
+  @@index([slug])
+}
+
+model Note {
+  id           String       @id @default(uuid())
+  title        String       // Note title
+  content      String       // Note content (can be rich text/markdown)
+  categoryId   String       // Which category this note belongs to
+  category     NoteCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId       String       // Owner of the note
+  user         User         @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
+  icon         String?      // Icon identifier (e.g., "FileText", "Star")
+  iconColor    String?      // Icon color
+  isCompleted  Boolean      @default(false) // For task-like notes
+  isPublic     Boolean      @default(false) // Whether note is public or private
+  priority     Int?         // Priority level (1-5)
+  tags         String[]     // Array of tags
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([categoryId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isPublic])
+}
+

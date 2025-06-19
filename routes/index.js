@@ -17,6 +17,7 @@ const awsRouter = require("./aws.routes");
 const analyticsRouter = require("./analytics.routes");
 const timeEntryRouter = require("./timeEntry.routes");
 const billingRouter = require("./billing.routes");
+const notesRouter = require("./notes.routes");
 
 // Auth routes
 router.use("/", authRouter);
@@ -46,5 +47,6 @@ router.use("/teams", teamRouter);
 router.use("/ai", aiRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/time-entries", timeEntryRouter);
+router.use("/notes", notesRouter);
 
 module.exports = router;
