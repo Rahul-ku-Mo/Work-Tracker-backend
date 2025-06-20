@@ -30,18 +30,18 @@ router.delete("/categories/:id", authenticateToken, deleteCategory);
 // ========== NOTE ROUTES ==========
 
 // Get notes by category slug
-router.get("/categories/:categorySlug/notes", authenticateToken, getNotesByCategory);
+router.get("/categories/:slug", authenticateToken, getNotesByCategory);
 
 // Create a new note
-router.post("/notes", authenticateToken, createNote);
+router.post("/", authenticateToken, createNote);
 
 // Get a single note
-router.get("/notes/:id", authenticateToken, getNote);
+router.get("/:id", authenticateToken, getNote);
 
 // Update a note
-router.put("/notes/:id", authenticateToken, updateNote);
+router.put("/:id", authenticateToken, updateNote);
 
 // Delete a note
-router.delete("/notes/:id", authenticateToken, deleteNote);
+router.delete("/:id", authenticateToken, deleteNote);
 
 module.exports = router; 

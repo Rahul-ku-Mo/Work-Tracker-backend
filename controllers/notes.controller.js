@@ -34,6 +34,7 @@ const getCategories = async (req, res) => {
             isCompleted: true,
             isPublic: true,
             priority: true,
+            emoji: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -195,12 +196,12 @@ const deleteCategory = async (req, res) => {
 const getNotesByCategory = async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { categorySlug } = req.params;
+    const { slug } = req.params;
 
     const category = await prisma.noteCategory.findFirst({
       where: {
         userId,
-        slug: categorySlug,
+        slug: slug,
       },
       include: {
         notes: {
@@ -224,7 +225,7 @@ const getNotesByCategory = async (req, res) => {
 const createNote = async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { categoryId, title, content, icon = "FileText", iconColor, priority, isPublic = false } = req.body;
+    const { categoryId, title, content, icon = "FileText", iconColor, priority, isPublic = false, emoji } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ error: "Note title is required" });
@@ -249,6 +250,7 @@ const createNote = async (req, res) => {
         iconColor: iconColor || `rgb(${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)})`,
         priority,
         isPublic,
+        emoji,
       },
     });
 
@@ -264,7 +266,7 @@ const updateNote = async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     const { id } = req.params;
-    const { title, content, icon, iconColor, isCompleted, isPublic, priority, tags } = req.body;
+    const { title, content, icon, iconColor, isCompleted, isPublic, priority, tags, emoji } = req.body;
 
     // Check if note exists and belongs to user
     const existingNote = await prisma.note.findFirst({
@@ -284,6 +286,7 @@ const updateNote = async (req, res) => {
     if (isPublic !== undefined) updateData.isPublic = isPublic;
     if (priority !== undefined) updateData.priority = priority;
     if (tags !== undefined) updateData.tags = tags;
+    if (emoji !== undefined) updateData.emoji = emoji;
 
     const note = await prisma.note.update({
       where: { id },

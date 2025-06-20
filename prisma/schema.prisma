@@ -459,6 +459,7 @@ model Note {
   user         User         @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
   icon         String?      // Icon identifier (e.g., "FileText", "Star")
   iconColor    String?      // Icon color
+  emoji        String?      // Emoji for the note (like Notion)
   isCompleted  Boolean      @default(false) // For task-like notes
   isPublic     Boolean      @default(false) // Whether note is public or private
   priority     Int?         // Priority level (1-5)
