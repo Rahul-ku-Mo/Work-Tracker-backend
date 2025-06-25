@@ -35,6 +35,8 @@ const getCategories = async (req, res) => {
             isPublic: true,
             priority: true,
             emoji: true,
+            coverType: true,
+            coverValue: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -47,25 +49,27 @@ const getCategories = async (req, res) => {
       ],
     });
 
-    // If user has no categories, create default ones
-    if (categories.length === 0) {
-      const createdCategories = await Promise.all(
-        DEFAULT_CATEGORIES.map(category =>
-          prisma.noteCategory.create({
-            data: {
-              ...category,
-              userId,
-            },
-            include: {
-              notes: true,
-            },
-          })
-        )
-      );
-      categories = createdCategories;
-    }
+    // Note: We no longer auto-create categories for better user experience
+    // Users will see an empty state and can manually create categories
 
-    res.json(categories);
+    // Transform cover fields to cover objects for all notes
+    const transformedCategories = categories.map(category => ({
+              ...category,
+      notes: category.notes.map(note => {
+        const transformedNote = {
+          ...note,
+          cover: note.coverType && note.coverValue ? {
+            type: note.coverType,
+            value: note.coverValue
+          } : null
+        };
+        delete transformedNote.coverType;
+        delete transformedNote.coverValue;
+        return transformedNote;
+      })
+    }));
+
+    res.json(transformedCategories);
   } catch (error) {
     console.error("Error fetching categories:", error);
     res.status(500).json({ error: "Failed to fetch categories" });
@@ -266,7 +270,7 @@ const updateNote = async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     const { id } = req.params;
-    const { title, content, icon, iconColor, isCompleted, isPublic, priority, tags, emoji } = req.body;
+    const { title, content, icon, iconColor, isCompleted, isPublic, priority, tags, emoji, coverType, coverValue } = req.body;
 
     // Check if note exists and belongs to user
     const existingNote = await prisma.note.findFirst({
@@ -287,6 +291,8 @@ const updateNote = async (req, res) => {
     if (priority !== undefined) updateData.priority = priority;
     if (tags !== undefined) updateData.tags = tags;
     if (emoji !== undefined) updateData.emoji = emoji;
+    if (coverType !== undefined) updateData.coverType = coverType;
+    if (coverValue !== undefined) updateData.coverValue = coverValue;
 
     const note = await prisma.note.update({
       where: { id },
@@ -349,7 +355,20 @@ const getNote = async (req, res) => {
       return res.status(404).json({ error: "Note not found" });
     }
 
-    res.json(note);
+    // Transform cover fields to cover object
+    const transformedNote = {
+      ...note,
+      cover: note.coverType && note.coverValue ? {
+        type: note.coverType,
+        value: note.coverValue
+      } : null
+    };
+
+    // Remove the individual cover fields from response
+    delete transformedNote.coverType;
+    delete transformedNote.coverValue;
+
+    res.json(transformedNote);
   } catch (error) {
     console.error("Error fetching note:", error);
     res.status(500).json({ error: "Failed to fetch note" });

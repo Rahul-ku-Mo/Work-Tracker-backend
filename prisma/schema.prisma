@@ -464,6 +464,8 @@ model Note {
   isPublic     Boolean      @default(false) // Whether note is public or private
   priority     Int?         // Priority level (1-5)
   tags         String[]     // Array of tags
+  coverType    String?      // Cover type: "image" or "color"
+  coverValue   String?      // Cover value: URL for image, hex code for color
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
