@@ -4,6 +4,21 @@ exports.getBoards = async (req, res) => {
   const { userId } = req.user;
 
   try {
+    // Check if user is admin
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    // Only admin users can see their own boards
+    if (user?.role !== "ADMIN") {
+      return res.status(200).json({
+        status: 200,
+        message: "Non-admin users cannot access personal boards",
+        data: []
+      });
+    }
+
     // Find user's team
     const team = await prisma.team.findFirst({
       where: {
@@ -23,9 +38,10 @@ exports.getBoards = async (req, res) => {
       });
     }
     
-    // Get boards for this team that the user has access to
+    // Get boards owned by this user (admin)
     const boards = await prisma.board.findMany({
       where: {
+        userId: userId, // Only boards created by this admin user
         members: {
           some: {
             userId: userId,

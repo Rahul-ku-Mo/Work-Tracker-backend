@@ -241,12 +241,16 @@ exports.inviteMember = async (req, res) => {
         }
       });
 
-      // Create notification for existing user
+      // Create notification for team captain about new member joining
       await prisma.notification.create({
         data: {
-          senderId: userId,
-          receiverId: userToInvite.id,
-          message: "JOIN"
+          senderId: userToInvite.id,
+          receiverId: userId, // Send to team captain (admin)
+          message: "JOIN",
+          metadata: JSON.stringify({
+            teamName: team.name,
+            teamId: team.id
+          })
         }
       });
 
@@ -387,7 +391,11 @@ exports.joinTeam = async (req, res) => {
       data: {
         senderId: userId,
         receiverId: team.captainId,
-        message: "JOIN"
+        message: "JOIN",
+        metadata: JSON.stringify({
+          teamName: team.name,
+          teamId: team.id
+        })
       }
     });
 
@@ -499,7 +507,7 @@ exports.validateInviteCode = async (req, res) => {
   }
 };
 
-// Get team boards - boards accessible by team members
+// Get team boards - both accessible and locked boards for team members
 exports.getTeamBoards = async (req, res) => {
   try {
     const userId = req.user?.userId;
@@ -530,15 +538,11 @@ exports.getTeamBoards = async (req, res) => {
 
     const teamMemberIds = user.team.members.map(member => member.id);
 
-    // Get boards that team members have access to through BoardUser relationships
-    const boards = await prisma.board.findMany({
+    // Get all boards created by team members
+    const allTeamBoards = await prisma.board.findMany({
       where: {
-        members: {
-          some: {
-            userId: {
-              in: teamMemberIds
-            }
-          }
+        userId: {
+          in: teamMemberIds
         }
       },
       select: {
@@ -550,13 +554,17 @@ exports.getTeamBoards = async (req, res) => {
         createdAt: true,
         members: {
           where: {
-            userId: {
-              in: teamMemberIds
-            }
+            userId: userId // Only get current user's access
           },
           select: {
             userId: true,
             role: true
+          }
+        },
+        user: {
+          select: {
+            name: true,
+            email: true
           }
         }
       },
@@ -565,10 +573,19 @@ exports.getTeamBoards = async (req, res) => {
       }
     });
 
+    // Add access status to each board
+    const boardsWithAccess = allTeamBoards.map(board => ({
+      ...board,
+      hasAccess: board.members.length > 0,
+      userRole: board.members[0]?.role || null,
+      isOwner: board.userId === userId,
+      createdBy: board.user.name || board.user.email
+    }));
+
     return res.status(200).json({
       status: 200,
       message: "Team boards retrieved successfully",
-      data: boards
+      data: boardsWithAccess
     });
   } catch (error) {
     console.error('Error in getTeamBoards:', error);

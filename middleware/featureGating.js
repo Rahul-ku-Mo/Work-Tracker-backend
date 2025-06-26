@@ -220,7 +220,7 @@ const getUsageStats = async (userId) => {
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
     
     // Get current usage
-    const [projectCount, user, imageCount] = await Promise.all([
+    const [projectCount, user, taskCount] = await Promise.all([
       prisma.board.count({ where: { userId } }),
       prisma.user.findUnique({
         where: { id: userId },
@@ -232,10 +232,72 @@ const getUsageStats = async (userId) => {
           }
         }
       }),
-      prisma.imageUpload ? prisma.imageUpload.count({ where: { userId } }) : Promise.resolve(0)
+      // Get task count across all user's projects
+      prisma.card.count({
+        where: {
+          column: {
+            board: {
+              userId: userId
+            }
+          }
+        }
+      })
     ]);
     
+    // Get storage usage (approximate from attachments)
+    let storageUsed = 0;
+    try {
+      const cardsWithAttachments = await prisma.card.findMany({
+        where: {
+          column: {
+            board: {
+              userId: userId
+            }
+          },
+          attachments: {
+            isEmpty: false
+          }
+        },
+        select: {
+          attachments: true
+        }
+      });
+      
+      // Estimate storage based on number of attachments (rough estimate: 500KB per attachment)
+      const totalAttachments = cardsWithAttachments.reduce((sum, card) => sum + card.attachments.length, 0);
+      storageUsed = totalAttachments * 0.5 / 1024; // Convert MB to GB
+    } catch (error) {
+      console.error('Error calculating storage:', error);
+      storageUsed = 0;
+    }
+
     const teamMemberCount = user?.team?.members?.length || 0;
+    
+    // Calculate max tasks per project
+    let maxTasksPerProject = 0;
+    if (projectCount > 0) {
+      try {
+        const projectTaskCounts = await prisma.board.findMany({
+          where: { userId },
+          include: {
+            columns: {
+              include: {
+                _count: {
+                  select: { cards: true }
+                }
+              }
+            }
+          }
+        });
+        
+        maxTasksPerProject = Math.max(...projectTaskCounts.map(project => 
+          project.columns.reduce((sum, column) => sum + column._count.cards, 0)
+        ), 0);
+      } catch (error) {
+        console.error('Error calculating max tasks per project:', error);
+        maxTasksPerProject = 0;
+      }
+    }
     
     return {
       plan,
@@ -248,12 +310,16 @@ const getUsageStats = async (userId) => {
           current: teamMemberCount,
           limit: limits.teamMembers === -1 ? null : limits.teamMembers
         },
+        tasksPerProject: {
+          current: maxTasksPerProject,
+          limit: limits.tasksPerProject === -1 ? null : limits.tasksPerProject
+        },
         storageGB: {
-          current: 0, // Implement storage tracking
+          current: Math.round(storageUsed * 100) / 100, // Round to 2 decimals (already in GB)
           limit: limits.storageGB === -1 ? null : limits.storageGB
         },
         imageUploads: {
-          current: imageCount,
+          current: taskCount, // Use task count as proxy for content created
           limit: limits.imageUploads === -1 ? null : limits.imageUploads
         }
       },
