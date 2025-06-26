@@ -4,7 +4,7 @@ const createCard = async (req, res) => {
   const { columnId } = req.query;
 
   try {
-    const { title, description, labels, attachments, dueDate, assigneeIds, priority } =
+    const { title, description, labels, attachments, dueDate, assigneeIds, priority, storyPoints } =
       req.body;
 
     const lastCard = await prisma.card.findFirst({
@@ -25,6 +25,7 @@ const createCard = async (req, res) => {
         attachments: attachments,
         dueDate: dueDate,
         priority: priority,
+        storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : 0,
         order: newOrder,
         column: {
           connect: {
@@ -67,6 +68,7 @@ const updateCard = async (req, res) => {
     order,
     priority,
     assigneeId,
+    storyPoints,
   } = req.body;
 
   try {
@@ -112,6 +114,7 @@ const updateCard = async (req, res) => {
       dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : currentCard.dueDate,
       order: order ?? currentCard.order,
       priority: priority ?? currentCard.priority,
+      storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : currentCard.storyPoints,
     };
 
     let wasAssigned = false;

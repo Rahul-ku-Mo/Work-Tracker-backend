@@ -165,6 +165,7 @@ model Card {
   labels      String[]
   attachments String[]
   priority    String?
+  storyPoints Int?      @default(0) // Story points for estimation
   assignees   User[]    @relation("assignee")
   createdAt   DateTime  @default(now())
   dueDate     DateTime?
