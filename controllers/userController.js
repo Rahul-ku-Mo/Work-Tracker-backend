@@ -1,4 +1,4 @@
-const { prisma, client } = require("../db");
+const { prisma } = require("../db");
 
 exports.checkUserExists = async (req, res, next) => {
   const { userId } = req.user;
@@ -17,19 +17,46 @@ exports.checkUserExists = async (req, res, next) => {
 
 exports.getUsers = async (req, res) => {
   const { userId } = req.user;
+  const { boardId } = req.query; // Optional: to filter out users already in a board
+
   try {
-    const users = await prisma.user.findMany({
-      where: {
-        id: {
-          not: userId,
+    let users;
+    if (boardId) {
+      // If boardId is provided, exclude users already in the board
+      users = await prisma.user.findMany({
+        where: {
+          id: { not: userId },
+          AND: {
+            NOT: {
+              boards: {
+                some: {
+                  boardId: parseInt(boardId),
+                },
+              },
+            },
+          },
         },
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          imageUrl: true,
+        },
+      });
+    } else {
+      // Regular user list
+      users = await prisma.user.findMany({
+        where: {
+          id: { not: userId },
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          imageUrl: true,
+        },
+      });
+    }
 
     res.status(200).json({
       status: 200,
@@ -37,27 +64,18 @@ exports.getUsers = async (req, res) => {
       data: users,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
 exports.getUser = async (req, res) => {
   const { userId } = req.user;
 
-  if (userId === null || userId === undefined) {
+  if (!userId) {
     return res.status(400).json({
       status: 400,
       message: "Invalid user ID",
-    });
-  }
-
-  const value = await client.get(`userId:${userId}`);
-
-  if (value) {
-    return res.status(200).json({
-      status: 200,
-      message: "Success",
-      data: JSON.parse(value),
     });
   }
 
@@ -69,34 +87,29 @@ exports.getUser = async (req, res) => {
         email: true,
         name: true,
         username: true,
-        boards: true,
-        comments: true,
         imageUrl: true,
         createdAt: true,
-        phoneNumber: true,
         state: true,
+        phoneNumber: true,
         address: true,
+        department: true,
         zipCode: true,
         company: true,
         role: true,
         isPaidUser: true,
         updatedAt: true,
-        organizationMember: true,
-        organizationLead: {
-          select: {
-            name: true,
-            id: true,
-            teamLeadId: true,
-            members: true,
+        boards: {
+          include: {
+            board: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
           },
         },
-        password: false, // Exclude password
       },
     });
-
-    if (user) {
-      await client.set(`userId:${userId}`, JSON.stringify(user));
-    }
 
     res.status(200).json({
       status: 200,
@@ -104,7 +117,8 @@ exports.getUser = async (req, res) => {
       data: user,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
@@ -114,28 +128,31 @@ exports.updateUser = async (req, res) => {
   const {
     name,
     phoneNumber,
-    state,
     company,
     role,
+    state,
+    department,
     address,
     zipCode,
     imageUrl,
     isPaidUser,
   } = req.body;
 
-  const data = {};
+  const data = {
+    updatedAt: new Date(Date.now()),
+  };
 
-  data.updatedAt = new Date(Date.now());
-
-  if (name !== undefined) data.name = name;
-  if (phoneNumber !== undefined) data.phoneNumber = phoneNumber;
-  if (state !== undefined) data.state = state;
-  if (address !== undefined) data.address = address;
-  if (zipCode !== undefined) data.zipCode = zipCode;
-  if (imageUrl !== undefined) data.imageUrl = imageUrl;
-  if (company !== undefined) data.company = company;
-  if (role !== undefined) data.role = role;
-  if (isPaidUser !== undefined) data.isPaidUser = isPaidUser;
+  // Only add fields to the data object if they are provided and not null/undefined
+  if (name != null) data.name = name;
+  if (phoneNumber != null) data.phoneNumber = phoneNumber;
+  if (company != null) data.company = company;
+  if (role != null) data.role = role;
+  if (state != null) data.state = state;
+  if (department != null) data.department = department;
+  if (address != null) data.address = address;
+  if (zipCode != null) data.zipCode = zipCode;
+  if (imageUrl != null) data.imageUrl = imageUrl;
+  if (isPaidUser != null) data.isPaidUser = isPaidUser;
 
   try {
     const user = await prisma.user.update({
@@ -146,8 +163,10 @@ exports.updateUser = async (req, res) => {
         name: true,
         email: true,
         phoneNumber: true,
-        state: true,
+        username: true,
         address: true,
+        state: true,
+        department: true,
         zipCode: true,
         imageUrl: true,
         company: true,
@@ -156,14 +175,13 @@ exports.updateUser = async (req, res) => {
       },
     });
 
-    await client.set(`userId:${userId}`, JSON.stringify(user));
-
     res.status(200).json({
       status: 200,
       message: "Success",
       data: user,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };

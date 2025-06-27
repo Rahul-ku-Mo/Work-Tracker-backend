@@ -1,61 +1,89 @@
+require('dotenv').config();
 const express = require("express");
 const { rateLimiterMiddleware } = require("./middleware/RateLimiterRedis");
 const { authenticatePusher } = require("./middleware/pusherAuth");
-
-const userRouter = require("./routes/userRoutes");
-const boardRouter = require("./routes/boardRoutes");
-const authRouter = require("./routes/authRoutes");
-const commentRouter = require("./routes/commentRoutes");
-const columnRouter = require("./routes/columnRoutes");
-const cardRouter = require("./routes/cardRoutes");
-const labelRouter = require("./routes/labelRoutes.js");
-const organizationRouter = require("./routes/organizationRoutes");
-const notificationRouter = require("./routes/notificationRoutes");
-
-const session = require("express-session");
-const passport = require("passport");
+const routes = require("./routes");
+const session = require("cookie-session");
+const { invalidateAllCaches } = require("./utils/cacheUtils");
 
 const app = express();
 const cors = require("cors");
 
-const port = 8000 || process.env.PORT;
+const port = process.env.PORT || 8000;
 
-app.use(
-  cors({
+// Security headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// Improved CORS configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // In production, replace with your actual frontend domains
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://your-production-domain.com', // Replace with actual domain
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+
+// Use CORS with options in production, allow all in development
+if (process.env.NODE_ENV === 'production') {
+  app.use(cors(corsOptions));
+} else {
+  app.use(cors({
     origin: "*",
-  })
-);
+    credentials: true
+  }));
+}
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Add size limit
 
+// Secure session configuration
 app.use(
   session({
-    secret: "your-session-secret",
+    secret: process.env.SESSION_SECRET || "your-session-secret-change-in-production",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false, // Changed to false for security
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
   })
 );
 
 // Apply rate limiting to all requests
 app.use(rateLimiterMiddleware);
 
-// Initialize Passport
-app.use(passport.initialize());
-app.use(passport.session());
-
-app.use("/api/v1", authRouter);
-
+// Pusher authentication route
 app.use("/api/v1/pusher/auth", authenticatePusher);
 
-app.use("/api/v1/users", userRouter);
-app.use("/api/v1/boards", boardRouter);
-app.use("/api/v1/columns", columnRouter);
-app.use("/api/v1/cards", cardRouter);
-app.use("/api/v1/comments", commentRouter);
-app.use("/api/v1/organizations", organizationRouter);
-app.use("/api/v1/notifications", notificationRouter);
-app.use("/api/v1/labels", labelRouter);
+// All API routes
+app.use("/api/v1", routes);
 
 app.listen(port, () => {
-  console.log(`Work-Tracker backend app listening on port ${port}`);
+  console.log(`PulseBoard backend app listening on port ${port}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// invalidateAllCaches();

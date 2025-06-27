@@ -9,9 +9,9 @@ exports.getColumns = async (req, res) => {
       include: {
         cards: {
           include: {
-            labels: true,
-          },
-        },
+            assignees: true,
+          }
+        }
       },
     });
 
@@ -86,7 +86,11 @@ exports.getColumn = async (req, res) => {
     const column = await prisma.column.findUnique({
       where: { id: parseInt(columnId) },
       include: {
-        cards: true,
+        cards: {
+          include: {
+            assignees: true,
+          }
+        }
       },
     });
 

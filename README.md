@@ -28,11 +28,11 @@ To set up the Trello App Backend locally, follow these steps:
 
 1. Clone the repository:
    ```
-   git clone https://github.com/Rahul-ku-Mo/Work-Tracker-backend
+   git clone https://github.com/Rahul-ku-Mo/PulseBoard-backend
    ```
 2. Navigate to the project directory:
    ```
-   cd Work-Tracker-backend
+   cd PulseBoard-backend
    ```
 3. Install dependencies:
    ```

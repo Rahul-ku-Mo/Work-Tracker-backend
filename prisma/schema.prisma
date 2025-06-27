@@ -13,54 +13,134 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum AppRole {
+  ADMIN
+  USER
+}
+
 model User {
-  id                   String         @id @default(uuid())
-  email                String         @unique
+  id                   String           @id @default(uuid())
+  email                String           @unique
   password             String?
   name                 String?
-  username             String?        @unique
-  boards               Board[]
+  username             String?          @unique
+  boards               BoardUser[]
   comments             Comment[]
   imageUrl             String?
-  createdAt            DateTime       @default(now())
+  createdAt            DateTime         @default(now())
   phoneNumber          String?
   state                String?
   address              String?
   zipCode              String?
   company              String?
-  isPaidUser           Boolean?       @default(false)
-  role                 String?
-  updatedAt            DateTime       @updatedAt
-  organizationMember   Organization[] @relation("members")
-  organizationLead     Organization[] @relation("teamLeads")
-  receivedNotification Notification[] @relation("receiver")
-  sentNotification     Notification[] @relation("sender")
+  department           String?
+  isPaidUser           Boolean?         @default(false)
+  isActive             Boolean?         @default(true)
+  role                 AppRole          @default(USER)
+  updatedAt            DateTime         @updatedAt
+  receivedNotification Notification[]   @relation("receiver")
+  sentNotification     Notification[]   @relation("sender")
+  assignedCards        Card[]           @relation("assignee")
+  createdCards         Card[]           @relation("cardCreator")
+  Board                Board[]
+  AiConversation       AiConversation[]
+  imageUploads         ImageUpload[]        @relation("ImageUploads")
+  paddleCustomerId     String?            @unique
+  
+  // Team relationship - a user belongs to one team
+  team                 Team?            @relation("TeamMembers", fields: [teamId], references: [id])
+  teamId               String?
+  
+  // Team captain relationship - a user can be captain of one team
+  captainOf            Team?            @relation("TeamCaptain")
+  
+  // Analytics related fields and relations
+  timeEntries          TimeEntry[]
+  efficiency           Int?             // Efficiency score (0-100)
+  performanceMetrics   PerformanceMetric[] @relation("userMetrics")
+  performanceHistory   UserPerformanceHistory[] @relation("userPerformanceHistory")
+  
+  // Board invitations sent by this user
+  sentBoardInvitations BoardInvitation[] @relation("BoardInvitationSender")
+  
+  // Billing related fields
+  subscription         Subscription?
+  
+  // Notes related relations
+  noteCategories       NoteCategory[] @relation("UserNoteCategories")
+  notes                Note[]         @relation("UserNotes")
 }
 
-model Organization {
-  id         String   @id @default(uuid())
-  name       String
-  teamLead   User     @relation("teamLeads", fields: [teamLeadId], references: [id])
-  teamLeadId String
-  members    User[]   @relation("members")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  boards     Board[]
+model Team {
+  id                 String             @id @default(uuid())
+  name               String
+  joinCode           String?            @unique // Optional: For invite functionality
+  members            User[]             @relation("TeamMembers")
+  captain            User               @relation("TeamCaptain", fields: [captainId], references: [id])
+  captainId          String             @unique // One captain per team
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  // Analytics related fields and relations
+  sprints            Sprint[]
+  performanceMetrics PerformanceMetric[] @relation("teamMetrics")
+  performanceSnapshots TeamPerformanceSnapshot[] @relation("teamSnapshots")
 }
 
 model Board {
-  id             Int           @id @default(autoincrement())
-  title          String
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  organizationId String? // New field
-  organization   Organization? @relation(fields: [organizationId], references: [id]) // New field
-  columns        Column[]
-  imageId        String
-  imageThumbUrl  String
-  imageFullUrl   String
-  imageLinkHTML  String
-  imageUserName  String
+  id            Int            @id @default(autoincrement())
+  title         String
+  userId        String // Creator of the board
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  members       BoardUser[]    // New: Board members
+  columns       Column[]
+  colorId       String
+  colorValue    String
+  colorName     String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sprints       Sprint[]      // A board can have multiple sprints
+  invitations   BoardInvitation[] // Board invitations for this board
+}
+
+// New model to manage board access
+model BoardUser {
+  id         String    @id @default(uuid())
+  board      Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId    Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  role       BoardRole @default(MEMBER)
+  isFavorite Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([boardId, userId])
+}
+
+// New enum for board-specific roles
+enum BoardRole {
+  ADMIN
+  MEMBER
+}
+
+// Board invitation model for inviting users via email
+model BoardInvitation {
+  id        String    @id @default(uuid())
+  email     String
+  boardId   Int
+  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  role      BoardRole @default(MEMBER)
+  token     String    @unique
+  invitedBy String
+  inviter   User      @relation("BoardInvitationSender", fields: [invitedBy], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([email])
+  @@index([token])
 }
 
 model Column {
@@ -82,11 +162,28 @@ model Card {
   columnId    Int
   column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   comments    Comment[]
-  labels      Label[]
+  labels      String[]
   attachments String[]
+  priority    String?
+  storyPoints Int?      @default(0) // Story points for estimation
+  assignees   User[]    @relation("assignee")
   createdAt   DateTime  @default(now())
   dueDate     DateTime?
   updatedAt   DateTime  @updatedAt
+  creator     User?     @relation("cardCreator", fields: [creatorId], references: [id])
+  creatorId   String?
+  
+  // Analytics related fields and relations
+  timeEntries    TimeEntry[]
+  estimatedHours Float?
+  actualHours    Float?       // Calculated from time entries
+  completedAt    DateTime?
+  isOnTime       Boolean?     // Whether completed on time
+  sprintId       String?
+  sprint         Sprint?      @relation(fields: [sprintId], references: [id])
+  tags           Tag[]
+  
+  @@index([sprintId])
 }
 
 model Comment {
@@ -99,15 +196,6 @@ model Comment {
   createdAt DateTime @default(now())
 }
 
-model Label {
-  id        Int      @id @default(autoincrement())
-  name      String
-  color     String
-  cardId    Int
-  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  createdAt DateTime @default(now())
-}
-
 model Notification {
   id         Int      @id @default(autoincrement())
   senderId   String
@@ -115,6 +203,8 @@ model Notification {
   receiverId String
   receiver   User     @relation("receiver", fields: [receiverId], references: [id])
   message    Message
+  metadata   String?  // JSON string for additional notification data
+  isRead     Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -122,4 +212,267 @@ model Notification {
 enum Message {
   JOIN
   LEAVE
+  CARD_ASSIGNED
+  CARD_UPDATED
+  CARD_COMPLETED
+  CARD_COMMENTED
+  CARD_DUE_SOON
+  CARD_OVERDUE
+  MENTION
 }
+
+model AiConversation {
+  id        String                  @id @default(uuid())
+  userId    String
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  messages  AiConversationMessage[]
+  title     String
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+}
+
+model AiConversationMessage {
+  id               String         @id @default(uuid())
+  content          String
+  aiConversation   AiConversation @relation(fields: [aiConversationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  aiConversationId String
+  role             String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+// ========== ANALYTICS MODELS ==========
+
+model Sprint {
+  id             String       @id @default(uuid())
+  name           String       // e.g., "Sprint 1", "Week 23", etc.
+  startDate      DateTime
+  endDate        DateTime
+  plannedPoints  Float        // Total story points planned
+  teamId         String
+  team           Team         @relation(fields: [teamId], references: [id])
+  boardId        Int
+  board          Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards          Card[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  completedPoints Float?  // To track actual completed points
+  efficiency      Float?  // Sprint-specific efficiency score
+  
+  performanceMetrics PerformanceMetric[] @relation("sprintMetrics")
+  performanceSnapshots TeamPerformanceSnapshot[]
+
+  @@index([teamId])
+  @@index([boardId])
+}
+
+model TimeEntry {
+  id             String         @id @default(uuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId         Int
+  card           Card           @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  startTime      DateTime       // When the time entry was first started
+  endTime        DateTime?      // When the time entry was finally completed
+  lastResumeTime DateTime?      // When the current session started (for calculating elapsed time)
+  totalDuration  Int           @default(0) // Total accumulated time in seconds
+  isPaused       Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([cardId])
+}
+
+model Tag {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  color     String?    // For UI display
+  cards     Card[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model PerformanceMetric {
+  id             String       @id @default(uuid())
+  date           DateTime
+  metricType     MetricType
+  value          Float        // The actual metric value
+  target         Float?       // Target value if applicable
+  previousValue  Float?       // Previous period's value for comparison
+  notes          String?
+  
+  // Relations - a metric can be associated with a user, team, or sprint
+  userId         String?
+  user           User?        @relation("userMetrics", fields: [userId], references: [id])
+  
+  teamId         String?
+  team           Team?        @relation("teamMetrics", fields: [teamId], references: [id])
+  
+  sprintId       String?
+  sprint         Sprint?      @relation("sprintMetrics", fields: [sprintId], references: [id])
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([sprintId])
+  @@index([date])
+  @@index([metricType])
+}
+
+enum MetricType {
+  VELOCITY
+  COMPLETION_RATE
+  AVERAGE_TIME
+  EFFICIENCY
+  PLANNING_ACCURACY
+  REVIEW_EFFICIENCY
+  TIME_DISTRIBUTION
+  PEAK_PERFORMANCE
+  TEAM_VELOCITY
+  BURNDOWN_RATE
+  COLLABORATION_SCORE
+}
+
+// Team Performance Snapshot - stores daily team metrics
+model TeamPerformanceSnapshot {
+  id                    String    @id @default(uuid())
+  teamId                String
+  team                  Team      @relation("teamSnapshots", fields: [teamId], references: [id])
+  date                  DateTime  @default(now())
+  
+  // Team metrics
+  velocity              Float     // Story points completed
+  velocityTrend         Float     // % change from previous period
+  completionRate        Float     // % of tasks completed on time
+  completionRateTrend   Float     // % change from previous period
+  avgCompletionTime     Float     // Average hours per task
+  avgCompletionTimeTrend Float    // % change from previous period
+  teamEfficiency        Float     // Overall team efficiency score
+  teamEfficiencyTrend   Float     // % change from previous period
+  
+  // Sprint data
+  sprintId              String?
+  sprint                Sprint?   @relation(fields: [sprintId], references: [id])
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([teamId])
+  @@index([date])
+  @@index([sprintId])
+}
+
+// Individual Performance History - tracks user performance over time
+model UserPerformanceHistory {
+  id                    String    @id @default(uuid())
+  userId                String
+  user                  User      @relation("userPerformanceHistory", fields: [userId], references: [id])
+  date                  DateTime  @default(now())
+  
+  // Individual metrics
+  tasksCompleted        Int       @default(0)
+  hoursWorked          Float     @default(0.0)
+  avgSessionTime       Float     @default(0.0)
+  efficiencyScore      Float     @default(0.0)
+  productivityRating   Float     @default(0.0)
+  
+  // Calculated trends
+  productivityTrend    String    @default("stable") // "up", "down", "stable"
+  
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([date])
+}
+
+// ========== BILLING MODELS ==========
+
+model Subscription {
+  id                     String           @id @default(uuid())
+  userId                 String           @unique
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                   SubscriptionPlan
+  status                 String           // active, canceled, incomplete, etc.
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  paddleSubscriptionId   String?          @unique
+  cancelAtPeriodEnd      Boolean          @default(false)
+
+  @@index([userId])
+  @@index([paddleSubscriptionId])
+  @@map("subscriptions")
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+// Image Upload tracking for billing purposes
+model ImageUpload {
+  id        String   @id @default(uuid())
+  userId    String   
+  user      User     @relation("ImageUploads", fields: [userId], references: [id], onDelete: Cascade)
+  s3Key     String   // The S3 object key
+  fileName  String   // Original filename
+  fileSize  Int      // File size in bytes
+  mimeType  String   // Image MIME type
+  url       String   // Full S3 URL
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ========== NOTES MODELS ==========
+
+model NoteCategory {
+  id          String   @id @default(uuid())
+  name        String   // Category name like "Plan", "Schedule", etc.
+  slug        String   // URL-friendly version like "plan", "schedule"
+  hoverColor  String?  // CSS hover color for UI
+  userId      String   // Owner of the category
+  user        User     @relation("UserNoteCategories", fields: [userId], references: [id], onDelete: Cascade)
+  notes       Note[]   // Notes within this category
+  isDefault   Boolean  @default(false) // Whether it's a default category
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, slug]) // User can't have duplicate slugs
+  @@index([userId])
+  @@index([slug])
+}
+
+model Note {
+  id           String       @id @default(uuid())
+  title        String       // Note title
+  content      String       // Note content (can be rich text/markdown)
+  categoryId   String       // Which category this note belongs to
+  category     NoteCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId       String       // Owner of the note
+  user         User         @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
+  icon         String?      // Icon identifier (e.g., "FileText", "Star")
+  iconColor    String?      // Icon color
+  emoji        String?      // Emoji for the note (like Notion)
+  isCompleted  Boolean      @default(false) // For task-like notes
+  isPublic     Boolean      @default(false) // Whether note is public or private
+  priority     Int?         // Priority level (1-5)
+  tags         String[]     // Array of tags
+  coverType    String?      // Cover type: "image" or "color"
+  coverValue   String?      // Cover value: URL for image, hex code for color
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([categoryId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isPublic])
+}
+
