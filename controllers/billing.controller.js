@@ -8,10 +8,23 @@ class BillingController {
   async createCheckoutSession(req, res) {
     try {
       const { priceId, successUrl, cancelUrl } = req.body;
-      const userId = req.user.id;
+      const userId = req.user.id || req.user.userId;
+
+      console.log('🔍 Checkout Session Debug:', {
+        priceId,
+        userId,
+        hasApiKey: !!process.env.PADDLE_API_KEY,
+        environment: process.env.PADDLE_ENVIRONMENT,
+        frontendUrl: process.env.FRONTEND_URL
+      });
 
       if (!priceId) {
         return res.status(400).json({ error: 'Price ID is required' });
+      }
+
+      if (!process.env.PADDLE_API_KEY) {
+        console.error('❌ PADDLE_API_KEY not configured');
+        return res.status(500).json({ error: 'Paddle API key not configured' });
       }
 
       // Get or create user
@@ -24,9 +37,12 @@ class BillingController {
         return res.status(404).json({ error: 'User not found' });
       }
 
+      console.log('👤 User found:', { email: user.email, hasPaddleCustomer: !!user.paddleCustomerId });
+
       // Create Paddle customer if not exists
       let customerId = user.paddleCustomerId;
       if (!customerId) {
+        console.log('🆕 Creating new Paddle customer...');
         customerId = await paddleService.createCustomer({
           email: user.email,
           name: user.name || user.email.split('@')[0],
@@ -38,9 +54,11 @@ class BillingController {
           where: { id: userId },
           data: { paddleCustomerId: customerId }
         });
+        console.log('✅ Paddle customer created:', customerId);
       }
 
       // Create checkout session
+      console.log('🛒 Creating checkout session...');
       const checkout = await paddleService.createCheckoutSession({
         priceId,
         customerId,
@@ -48,10 +66,18 @@ class BillingController {
         cancelUrl: cancelUrl || `${process.env.FRONTEND_URL}/billing?canceled=true`
       });
 
+      console.log('✅ Checkout session created:', checkout.id);
       res.json({ url: checkout.url });
     } catch (error) {
-      console.error('Error creating checkout session:', error);
-      res.status(500).json({ error: error.message });
+      console.error('❌ Error creating checkout session:', {
+        message: error.message,
+        stack: error.stack,
+        data: error.response?.data
+      });
+      res.status(500).json({ 
+        error: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   }
 
@@ -448,6 +474,54 @@ class BillingController {
       res.json(stats);
     } catch (error) {
       console.error('Error getting usage statistics:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // Test Paddle configuration (development only)
+  async testPaddleConfig(req, res) {
+    try {
+      const config = {
+        hasApiKey: !!process.env.PADDLE_API_KEY,
+        environment: process.env.PADDLE_ENVIRONMENT || 'sandbox',
+        hasProPriceId: !!process.env.PADDLE_PRICE_ID_PRO,
+        hasBusinessPriceId: !!process.env.PADDLE_PRICE_ID_BUSINESS,
+        frontendUrl: process.env.FRONTEND_URL,
+        proPriceId: process.env.PADDLE_PRICE_ID_PRO || 'NOT_SET',
+        businessPriceId: process.env.PADDLE_PRICE_ID_BUSINESS || 'NOT_SET'
+      };
+
+      console.log('🧪 Paddle Configuration Test:', config);
+
+      if (!config.hasApiKey) {
+        return res.status(500).json({ 
+          error: 'Paddle API key not configured',
+          config 
+        });
+      }
+
+      // Try to make a simple API call to test connection
+      try {
+        await paddleService.paddle.products.list({ per_page: 1 });
+        config.paddleApiWorking = true;
+      } catch (error) {
+        config.paddleApiWorking = false;
+        config.paddleError = error.message;
+      }
+
+      res.json({
+        message: 'Paddle configuration test',
+        config,
+        recommendations: [
+          !config.hasApiKey && 'Set PADDLE_API_KEY environment variable',
+          !config.hasProPriceId && 'Set PADDLE_PRICE_ID_PRO environment variable',
+          !config.hasBusinessPriceId && 'Set PADDLE_PRICE_ID_BUSINESS environment variable',
+          !config.frontendUrl && 'Set FRONTEND_URL environment variable',
+          !config.paddleApiWorking && 'Check if Paddle API key is valid and has correct permissions'
+        ].filter(Boolean)
+      });
+    } catch (error) {
+      console.error('Error testing Paddle config:', error);
       res.status(500).json({ error: error.message });
     }
   }

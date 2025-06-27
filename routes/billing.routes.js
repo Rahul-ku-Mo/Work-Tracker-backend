@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const billingController = require('../controllers/billing.controller');
-const auth = require('../middleware/auth'); // Assuming you have auth middleware
+const { authenticateToken } = require('../utils/validation'); // Use the correct auth middleware
 
 // Public webhook endpoint (no auth required)
 router.post('/webhook', express.raw({ type: 'application/json' }), billingController.handleWebhook);
@@ -10,7 +10,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), billingContro
 router.get('/plans', billingController.getPlans);
 
 // Protected routes (require authentication)
-router.use(auth); // Apply auth middleware to all routes below
+router.use(authenticateToken); // Apply auth middleware to all routes below
 
 // Get user's subscription status
 router.get('/subscription', billingController.getSubscriptionStatus);
@@ -29,5 +29,8 @@ router.post('/reactivate-subscription', billingController.reactivateSubscription
 
 // Get usage statistics
 router.get('/usage-stats', billingController.getUsageStatistics);
+
+// Test Paddle configuration (development/debugging only)
+router.get('/test-paddle-config', billingController.testPaddleConfig);
 
 module.exports = router; 
