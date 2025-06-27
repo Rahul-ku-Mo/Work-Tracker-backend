@@ -30,7 +30,8 @@ const corsOptions = {
     // In production, replace with your actual frontend domains
     const allowedOrigins = [
       process.env.FRONTEND_URL,
-      'https://app.pulseboard.co.in'
+      'https://app.pulseboard.co.in',
+      'https://www.pulseboard.co.in',
     ].filter(Boolean);
     
     if (allowedOrigins.indexOf(origin) !== -1) {

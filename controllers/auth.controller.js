@@ -239,7 +239,7 @@ exports.oauthGoogleLogin = async (req, res) => {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: process.env.GOOGLE_REDIRECT_URI || "http://localhost:5173/auth/google/callback",
+        redirect_uri: process.env.GOOGLE_REDIRECT_URI || "https://app.pulseboard.co.in/auth/google/callback",
         grant_type: "authorization_code",
       },
       {
