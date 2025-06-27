@@ -29,9 +29,6 @@ const corsOptions = {
     
     // In production, replace with your actual frontend domains
     const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'https://your-production-domain.com', // Replace with actual domain
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
