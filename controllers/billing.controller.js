@@ -190,19 +190,21 @@ class BillingController {
           price: 0,
           currency: 'usd',
           interval: 'month',
+          trialDays: 14,
           features: [
-            '2 projects',
-            '3 team members',
-            '25 tasks per project',
-            '100 image uploads',
+            '5 projects',
+            '15 team members',
+            '100 tasks per project',
+            '1GB storage',
             'Basic task management',
             '7-day activity history',
-            'Community support'
+            'Community support',
+            '14-day free trial'
           ],
           limits: {
-            projects: 2,
-            members: 3,
-            tasksPerProject: 25,
+            projects: 5,
+            members: 15,
+            tasksPerProject: 100,
             storageGB: 1,
             activityHistoryDays: 7
           },
@@ -217,8 +219,8 @@ class BillingController {
           interval: 'month',
           paddlePrice: process.env.PADDLE_PRICE_ID_PRO,
           features: [
-            '10 projects',
-            '15 team members',
+            '15 projects',
+            '100 team members',
             'Unlimited tasks',
             '10GB storage',
             'Advanced task management',
@@ -229,8 +231,8 @@ class BillingController {
             'Custom project templates'
           ],
           limits: {
-            projects: 10,
-            members: 15,
+            projects: 15,
+            members: 100,
             tasksPerProject: -1, // unlimited
             storageGB: 10,
             activityHistoryDays: 30
@@ -247,7 +249,7 @@ class BillingController {
           paddlePrice: process.env.PADDLE_PRICE_ID_BUSINESS,
           features: [
             'Unlimited projects',
-            '50+ team members',
+            'Unlimited team members',
             'Unlimited tasks',
             '100GB storage',
             'Full feature access',

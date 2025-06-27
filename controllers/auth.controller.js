@@ -409,3 +409,49 @@ exports.verifyTokenAndRole = async (req, res) => {
   }
 };
 
+// Check trial status for free plan users
+exports.checkTrialStatus = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        subscription: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // If user has a paid subscription, they don't need trial
+    if (user.subscription && user.subscription.plan !== 'FREE') {
+      return res.status(200).json({
+        onTrial: false,
+        trialExpired: false,
+        daysRemaining: null,
+        hasActiveSubscription: true
+      });
+    }
+
+    // Calculate trial status for free users
+    const accountAge = Date.now() - user.createdAt.getTime();
+    const trialDays = 14;
+    const trialPeriod = trialDays * 24 * 60 * 60 * 1000; // 14 days in milliseconds
+    const trialExpired = accountAge > trialPeriod;
+    const daysRemaining = Math.max(0, Math.ceil((trialPeriod - accountAge) / (24 * 60 * 60 * 1000)));
+
+    return res.status(200).json({
+      onTrial: !trialExpired,
+      trialExpired,
+      daysRemaining,
+      hasActiveSubscription: false,
+      accountCreated: user.createdAt
+    });
+  } catch (error) {
+    console.error("Error checking trial status:", error);
+    return res.status(500).json({ message: "Error checking trial status" });
+  }
+};
+

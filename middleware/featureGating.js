@@ -4,12 +4,12 @@ const prisma = new PrismaClient();
 // Feature limits for each plan
 const PLAN_LIMITS = {
   free: {
-    projects: 2,
-    teamMembers: 3,
-    tasksPerProject: 25,
+    projects: 5,
+    teamMembers: 15,
+    tasksPerProject: 100,
     activityHistoryDays: 7,
     storageGB: 1,
-    imageUploads: 100,
+    trialDays: 14,
     analytics: false,
     timeTracking: false,
     customFields: false,
@@ -17,12 +17,12 @@ const PLAN_LIMITS = {
     prioritySupport: false
   },
   pro: {
-    projects: -1, // unlimited
-    teamMembers: 15,
-    tasksPerProject: -1,
-    activityHistoryDays: 90,
-    storageGB: 50,
-    imageUploads: 1000,
+    projects: 15,
+    teamMembers: 100,
+    tasksPerProject: -1, // unlimited
+    activityHistoryDays: 30,
+    storageGB: 10,
+    trialDays: -1, // no trial limit
     analytics: true,
     timeTracking: true,
     customFields: true,
@@ -30,17 +30,16 @@ const PLAN_LIMITS = {
     prioritySupport: false
   },
   enterprise: {
-    projects: -1,
-    teamMembers: -1,
-    tasksPerProject: -1,
-    activityHistoryDays: -1,
-    storageGB: -1,
-    imageUploads: -1,
+    projects: -1, // unlimited
+    teamMembers: -1, // unlimited
+    tasksPerProject: -1, // unlimited
+    activityHistoryDays: -1, // unlimited
+    storageGB: 100,
+    trialDays: -1, // no trial limit
     analytics: true,
     timeTracking: true,
     customFields: true,
     aiFeatures: true,
-    prioritySupport: true,
     prioritySupport: true
   }
 };
