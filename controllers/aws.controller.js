@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 const uploadFile = async (req, res) => {
   try {
     const { fileName, fileType } = req.body;
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     // Debug logging
     console.log('Upload request - userId:', userId, 'user object:', req.user);
@@ -61,7 +61,7 @@ const uploadFile = async (req, res) => {
 const confirmUpload = async (req, res) => {
   try {
     const { key, fileName, fileSize, mimeType } = req.body;
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     // Debug logging
     console.log('Confirm upload request - userId:', userId, 'user object:', req.user);

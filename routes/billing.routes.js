@@ -30,7 +30,7 @@ router.post('/reactivate-subscription', billingController.reactivateSubscription
 // Get usage statistics
 router.get('/usage-stats', billingController.getUsageStatistics);
 
-// Test Paddle configuration (development/debugging only)
+// Test Paddle configuration (protected - for debugging when authenticated)
 router.get('/test-paddle-config', billingController.testPaddleConfig);
 
 module.exports = router; 

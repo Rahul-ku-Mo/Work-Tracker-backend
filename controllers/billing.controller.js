@@ -8,23 +8,10 @@ class BillingController {
   async createCheckoutSession(req, res) {
     try {
       const { priceId, successUrl, cancelUrl } = req.body;
-      const userId = req.user.id || req.user.userId;
-
-      console.log('🔍 Checkout Session Debug:', {
-        priceId,
-        userId,
-        hasApiKey: !!process.env.PADDLE_API_KEY,
-        environment: process.env.PADDLE_ENVIRONMENT,
-        frontendUrl: process.env.FRONTEND_URL
-      });
+      const userId = req.user.userId;
 
       if (!priceId) {
         return res.status(400).json({ error: 'Price ID is required' });
-      }
-
-      if (!process.env.PADDLE_API_KEY) {
-        console.error('❌ PADDLE_API_KEY not configured');
-        return res.status(500).json({ error: 'Paddle API key not configured' });
       }
 
       // Get or create user
@@ -37,12 +24,9 @@ class BillingController {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      console.log('👤 User found:', { email: user.email, hasPaddleCustomer: !!user.paddleCustomerId });
-
       // Create Paddle customer if not exists
       let customerId = user.paddleCustomerId;
       if (!customerId) {
-        console.log('🆕 Creating new Paddle customer...');
         customerId = await paddleService.createCustomer({
           email: user.email,
           name: user.name || user.email.split('@')[0],
@@ -54,30 +38,19 @@ class BillingController {
           where: { id: userId },
           data: { paddleCustomerId: customerId }
         });
-        console.log('✅ Paddle customer created:', customerId);
       }
 
       // Create checkout session
-      console.log('🛒 Creating checkout session...');
       const checkout = await paddleService.createCheckoutSession({
         priceId,
         customerId,
         successUrl: successUrl || `${process.env.FRONTEND_URL}/billing?success=true`,
         cancelUrl: cancelUrl || `${process.env.FRONTEND_URL}/billing?canceled=true`
       });
-
-      console.log('✅ Checkout session created:', checkout.id);
       res.json({ url: checkout.url });
     } catch (error) {
-      console.error('❌ Error creating checkout session:', {
-        message: error.message,
-        stack: error.stack,
-        data: error.response?.data
-      });
-      res.status(500).json({ 
-        error: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
+      console.error('Error creating checkout session:', error);
+      res.status(500).json({ error: error.message });
     }
   }
 
@@ -85,7 +58,7 @@ class BillingController {
   async createBillingPortalSession(req, res) {
     try {
       const { returnUrl } = req.body;
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -111,7 +84,7 @@ class BillingController {
   // Get user's subscription status
   async getSubscriptionStatus(req, res) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -150,7 +123,7 @@ class BillingController {
   // Cancel subscription
   async cancelSubscription(req, res) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -179,7 +152,7 @@ class BillingController {
   // Reactivate subscription
   async reactivateSubscription(req, res) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -469,7 +442,7 @@ class BillingController {
   // Get usage statistics for current user
   async getUsageStatistics(req, res) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const stats = await getUsageStats(userId);
       res.json(stats);
     } catch (error) {

@@ -412,7 +412,7 @@ exports.verifyTokenAndRole = async (req, res) => {
 // Check trial status for free plan users
 exports.checkTrialStatus = async (req, res) => {
   try {
-    const userId = req.user.userId || req.user.id;
+    const userId = req.user.userId;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
