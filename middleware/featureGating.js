@@ -66,7 +66,15 @@ const getUserPlan = async (userId) => {
       return 'free';
     }
 
-    return user.subscription.plan;
+    // Convert database enum to lowercase for consistency
+    const planMapping = {
+      'FREE': 'free',
+      'PRO': 'pro', 
+      'ENTERPRISE': 'enterprise',
+      'TEAM': 'team'
+    };
+
+    return planMapping[user.subscription.plan] || 'free';
   } catch (error) {
     console.error('Error getting user plan:', error);
     return 'free'; // Default to free on error
@@ -313,13 +321,13 @@ const getUsageStats = async (userId) => {
           current: maxTasksPerProject,
           limit: limits.tasksPerProject === -1 ? null : limits.tasksPerProject
         },
+        totalTasks: {
+          current: taskCount,
+          limit: null // Total tasks are usually unlimited
+        },
         storageGB: {
           current: Math.round(storageUsed * 100) / 100, // Round to 2 decimals (already in GB)
           limit: limits.storageGB === -1 ? null : limits.storageGB
-        },
-        imageUploads: {
-          current: taskCount, // Use task count as proxy for content created
-          limit: limits.imageUploads === -1 ? null : limits.imageUploads
         }
       },
       features: {

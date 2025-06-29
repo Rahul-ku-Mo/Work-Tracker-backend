@@ -15,22 +15,25 @@ router.use(authenticateToken); // Apply auth middleware to all routes below
 // Get user's subscription status
 router.get('/subscription', billingController.getSubscriptionStatus);
 
-// Create checkout session for subscription
-router.post('/create-checkout-session', billingController.createCheckoutSession);
+// Create subscription (from Paddle checkout completed)
+router.post('/subscription', billingController.createSubscription);
 
-// Create billing portal session
-router.post('/create-portal-session', billingController.createBillingPortalSession);
+// Update subscription (upgrade/downgrade)
+router.patch('/subscription', billingController.updateSubscription);
 
 // Cancel subscription
 router.post('/cancel-subscription', billingController.cancelSubscription);
 
-// Reactivate subscription
-router.post('/reactivate-subscription', billingController.reactivateSubscription);
+// Create billing portal session
+router.post('/billing-portal', billingController.createBillingPortalSession);
 
 // Get usage statistics
 router.get('/usage-stats', billingController.getUsageStatistics);
 
 // Test Paddle configuration (protected - for debugging when authenticated)
 router.get('/test-paddle-config', billingController.testPaddleConfig);
+
+// Fix missing subscription IDs (utility method - for maintenance)
+router.post('/fix-missing-subscription-ids', billingController.fixMissingSubscriptionIds);
 
 module.exports = router; 

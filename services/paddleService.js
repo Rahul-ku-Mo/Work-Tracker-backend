@@ -1,40 +1,19 @@
 const { Paddle } = require('@paddle/paddle-node-sdk');
+const crypto = require('crypto');
 
 class PaddleService {
   constructor() {
-    this.paddle = new Paddle({
-      apiKey: process.env.PADDLE_API_KEY,
-      environment: process.env.PADDLE_ENVIRONMENT || 'sandbox',
+    // Ensure API key is properly formatted
+    const apiKey = process.env.PADDLE_API_KEY_SB;
+    if (!apiKey) {
+      throw new Error('PADDLE_API_KEY is required');
+    }
+    
+    this.paddle = new Paddle(apiKey.trim(), {
+      environment: process.env.PADDLE_ENVIRONMENT_SB || 'sandbox',
     });
   }
 
-  // Create checkout session
-  async createCheckoutSession({ priceId, customerId, successUrl, cancelUrl }) {
-    try {
-      const checkout = await this.paddle.checkout.create({
-        items: [
-          {
-            price_id: priceId,
-            quantity: 1
-          }
-        ],
-        customer_id: customerId,
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        payment_settings: {
-          allowed_methods: ['card', 'paypal']
-        }
-      });
-
-      return {
-        id: checkout.id,
-        url: checkout.url
-      };
-    } catch (error) {
-      console.error('Paddle checkout creation failed:', error);
-      throw new Error(`Failed to create checkout session: ${error.message}`);
-    }
-  }
 
   // Create or get customer
   async createCustomer({ email, name, userId }) {
@@ -54,7 +33,7 @@ class PaddleService {
     }
   }
 
-  // Get subscription details
+  // Get subscription details {correct}
   async getSubscription(subscriptionId) {
     try {
       return await this.paddle.subscriptions.get(subscriptionId);
@@ -64,7 +43,42 @@ class PaddleService {
     }
   }
 
-  // Cancel subscription
+  // Get subscriptions by customer ID
+  async getSubscriptionsByCustomerId(customerId) {
+    try {
+      const subscriptions = await this.paddle.subscriptions.list();
+
+      console.log("Paddle subscriptions", subscriptions);
+      return subscriptions.data || [];
+    } catch (error) {
+      console.error('Failed to get subscriptions by customer ID:', error);
+      throw new Error(`Failed to get subscriptions: ${error.message}`);
+    }
+  }
+
+  // Find and get the latest active subscription for a customer
+  async getLatestSubscriptionForCustomer(customerId) {
+    try {
+      const subscriptions = await this.getSubscriptionsByCustomerId(customerId);
+
+      
+      if (!subscriptions || subscriptions.length === 0) {
+        return null;
+      }
+
+      // Find the most recent active subscription
+      const activeSubscription = subscriptions
+        .filter(sub => sub.status === 'active' || sub.status === 'trialing')
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+      return activeSubscription || null;
+    } catch (error) {
+      console.error('Failed to get latest subscription for customer:', error);
+      throw new Error(`Failed to get customer subscription: ${error.message}`);
+    }
+  }
+
+  // Cancel subscription {correct}
   async cancelSubscription(subscriptionId) {
     try {
       return await this.paddle.subscriptions.cancel(subscriptionId, {
@@ -76,7 +90,7 @@ class PaddleService {
     }
   }
 
-  // Resume subscription
+  // Resume subscription {correct}
   async resumeSubscription(subscriptionId) {
     try {
       return await this.paddle.subscriptions.resume(subscriptionId);
@@ -89,24 +103,102 @@ class PaddleService {
   // Verify webhook signature
   verifyWebhookSignature(requestBody, signature) {
     try {
-      return this.paddle.webhooks.verify(requestBody, signature, process.env.PADDLE_WEBHOOK_SECRET);
+      const webhookSecret = process.env.PADDLE_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        console.error('PADDLE_WEBHOOK_SECRET not configured');
+        return false;
+      }
+
+      if (!signature || !requestBody) {
+        console.error('Missing signature or request body');
+        return false;
+      }
+
+      // Remove 'Paddle ' prefix from signature if present
+      const cleanSignature = signature.replace('Paddle ', '').trim();
+      
+      // Create HMAC signature
+      const hmac = crypto.createHmac('sha256', webhookSecret);
+      hmac.update(requestBody, 'utf8');
+      const expectedSignature = hmac.digest('hex');
+      
+      // Ensure both signatures are the same length before comparing
+      if (cleanSignature.length !== expectedSignature.length) {
+        console.error('Signature length mismatch:', {
+          received: cleanSignature.length,
+          expected: expectedSignature.length
+        });
+        return false;
+      }
+      
+      // Compare signatures securely
+      return crypto.timingSafeEqual(
+        Buffer.from(cleanSignature, 'hex'),
+        Buffer.from(expectedSignature, 'hex')
+      );
     } catch (error) {
       console.error('Webhook verification failed:', error);
       return false;
     }
   }
 
+  // Update subscription with new price (upgrade/downgrade)
+  async updateSubscription(subscriptionId, newPriceId, prorationBillingMode = 'prorated_immediately') {
+    try {
+      // First get the current subscription to preserve existing items
+      const currentSubscription = await this.getSubscription(subscriptionId);
+      
+      // Create the new items array with the new price
+      const items = [
+        {
+          price_id: newPriceId,
+          quantity: 1
+        }
+      ];
+
+      // Update the subscription
+      const updatedSubscription = await this.paddle.subscriptions.update(subscriptionId, {
+        proration_billing_mode: prorationBillingMode,
+        items: items
+      });
+
+      return updatedSubscription;
+    } catch (error) {
+      console.error('Failed to update subscription:', error);
+      throw new Error(`Failed to update subscription: ${error.message}`);
+    }
+  }
+
   // Get customer portal URL
   async getCustomerPortalUrl(customerId, returnUrl) {
     try {
-      const portalSession = await this.paddle.customers.createPortalSession(customerId, {
-        return_url: returnUrl
+      // In Paddle SDK v2, customer portal is created via the general API
+      const portalSession = await this.paddle.customerPortalSessions.create({
+        customer_id: customerId,
       });
+
+
+      const url = portalSession.urls.general.overview;
       
-      return portalSession.url;
+      return url;
     } catch (error) {
       console.error('Failed to create portal session:', error);
       throw new Error(`Failed to create portal session: ${error.message}`);
+    }
+  }
+
+  // Test API connection
+  async testConnection() {
+    try {
+      await this.paddle.products.list({ per_page: 1 });
+      return { success: true, message: 'API connection working' };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.message,
+        code: error.code,
+        detail: error.detail
+      };
     }
   }
 }
