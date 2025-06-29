@@ -4,17 +4,15 @@ const crypto = require('crypto');
 class PaddleService {
   constructor() {
     // Ensure API key is properly formatted
-    const apiKey = process.env.PADDLE_API_KEY_SB;
+    const apiKey = process.env.PADDLE_API_KEY;
     if (!apiKey) {
       throw new Error('PADDLE_API_KEY is required');
     }
     
     this.paddle = new Paddle(apiKey.trim(), {
-      environment: process.env.PADDLE_ENVIRONMENT_SB || 'sandbox',
+      environment: process.env.PADDLE_ENVIRONMENT || 'production',
     });
   }
-
-
   // Create or get customer
   async createCustomer({ email, name, userId }) {
     try {
