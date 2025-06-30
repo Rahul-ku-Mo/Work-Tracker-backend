@@ -57,6 +57,8 @@ if (process.env.NODE_ENV === 'production') {
   }));
 }
 
+// Apply JSON parsing to all routes except webhooks
+app.use('/api/v1/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' })); // Add size limit
 
 // Secure session configuration

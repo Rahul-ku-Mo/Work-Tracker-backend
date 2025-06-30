@@ -7,6 +7,7 @@ const {
   authenticateTokenFromGoogle,
 } = require("../utils/validation");
 const axios = require("axios");
+const paddleService = require("../services/paddleService");
 
 exports.createSendToken = (user, res) => {
   const token = signToken(user.id);
@@ -143,6 +144,27 @@ exports.signup = async (req, res) => {
         }
       },
     });
+
+    // Create Paddle customer for billing consistency
+    try {
+      const paddleCustomerId = await paddleService.createCustomer({
+        email: user.email,
+        name: user.name,
+        userId: user.id
+      });
+      
+      // Update user with Paddle customer ID
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { paddleCustomerId }
+      });
+      
+      console.log(`✅ Created Paddle customer ${paddleCustomerId} for user ${user.email}`);
+    } catch (paddleError) {
+      console.error('❌ Failed to create Paddle customer for user:', user.email, paddleError);
+      // Don't fail the signup process, but log the error for monitoring
+      // The user can still use the app, and customer creation can be retried later
+    }
 
     const accesstoken = this.createSendToken(user, res);
 
@@ -344,6 +366,26 @@ exports.oauthGoogleLogin = async (req, res) => {
           }
         },
       });
+
+      // Create Paddle customer for Google OAuth users
+      try {
+        const paddleCustomerId = await paddleService.createCustomer({
+          email: existingUser.email,
+          name: existingUser.name,
+          userId: existingUser.id
+        });
+        
+        // Update user with Paddle customer ID
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { paddleCustomerId }
+        });
+        
+        console.log(`✅ Created Paddle customer ${paddleCustomerId} for Google OAuth user ${existingUser.email}`);
+      } catch (paddleError) {
+        console.error('❌ Failed to create Paddle customer for Google OAuth user:', existingUser.email, paddleError);
+        // Don't fail the signup process, but log the error for monitoring
+      }
     }
 
     // Create JWT token for our application

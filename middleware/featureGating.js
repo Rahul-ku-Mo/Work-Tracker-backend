@@ -87,6 +87,26 @@ const hasFeatureAccess = (plan, feature) => {
   return limits[feature] === true;
 };
 
+// Get actual storage usage in GB from ImageUpload table
+const getStorageUsage = async (userId) => {
+  try {
+    const result = await prisma.imageUpload.aggregate({
+      where: { userId },
+      _sum: {
+        fileSize: true
+      }
+    });
+    
+    const totalBytes = result._sum.fileSize || 0;
+    const totalGB = totalBytes / (1024 * 1024 * 1024); // Convert bytes to GB
+    
+    return totalGB;
+  } catch (error) {
+    console.error('Error calculating storage usage:', error);
+    return 0;
+  }
+};
+
 // Check if user is within limits
 const isWithinLimits = async (userId, plan, limitType) => {
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
@@ -121,12 +141,9 @@ const isWithinLimits = async (userId, plan, limitType) => {
         currentUsage = user?.team?.members?.length || 0;
         break;
         
-      case 'imageUploads':
-        // Count images uploaded by this user (S3 keys in user's folder)
-        const imageCount = await prisma.imageUpload.count({
-          where: { userId }
-        });
-        currentUsage = imageCount;
+      case 'storageGB':
+        // Use actual storage usage from ImageUpload table
+        currentUsage = await getStorageUsage(userId);
         break;
         
       case 'tasksPerProject':
@@ -251,32 +268,8 @@ const getUsageStats = async (userId) => {
       })
     ]);
     
-    // Get storage usage (approximate from attachments)
-    let storageUsed = 0;
-    try {
-      const cardsWithAttachments = await prisma.card.findMany({
-        where: {
-          column: {
-            board: {
-              userId: userId
-            }
-          },
-          attachments: {
-            isEmpty: false
-          }
-        },
-        select: {
-          attachments: true
-        }
-      });
-      
-      // Estimate storage based on number of attachments (rough estimate: 500KB per attachment)
-      const totalAttachments = cardsWithAttachments.reduce((sum, card) => sum + card.attachments.length, 0);
-      storageUsed = totalAttachments * 0.5 / 1024; // Convert MB to GB
-    } catch (error) {
-      console.error('Error calculating storage:', error);
-      storageUsed = 0;
-    }
+    // Get actual storage usage from ImageUpload table
+    const storageUsed = await getStorageUsage(userId);
 
     const teamMemberCount = user?.team?.members?.length || 0;
     
@@ -351,5 +344,6 @@ module.exports = {
   requireFeature,
   requireWithinLimits,
   getUsageStats,
+  getStorageUsage,
   PLAN_LIMITS
 }; 
