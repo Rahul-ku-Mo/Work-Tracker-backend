@@ -29,16 +29,26 @@ const uploadFile = async (req, res) => {
         .json({ message: "Only image files are allowed" });
     }
 
-    // Check if user is within image upload limits
-    const { getUserPlan } = require("../middleware/featureGating");
+    // Check storage limits before upload (we'll validate file size on confirm)
+    const { getUserPlan, getStorageUsage } = require("../middleware/featureGating");
     const plan = await getUserPlan(userId);
-    const withinLimits = await isWithinLimits(userId, plan, 'imageUploads');
+    const storageUsage = await getStorageUsage(userId);
     
-    if (!withinLimits) {
+    // For now, just check if user has storage available (detailed check happens on confirm)
+    // This is a pre-check to avoid unnecessary S3 operations
+    const planLimits = {
+      free: 1, // 1GB
+      pro: 10, // 10GB  
+      enterprise: 100 // 100GB
+    };
+    
+    const storageLimit = planLimits[plan] || planLimits.free;
+    
+    if (storageUsage >= storageLimit) {
       return res
         .status(403)
         .json({ 
-          message: "Image upload limit reached for your current plan",
+          message: `Storage limit reached. You've used ${storageUsage.toFixed(2)}GB of your ${storageLimit}GB limit.`,
           upgradeRequired: true 
         });
     }
@@ -74,6 +84,29 @@ const confirmUpload = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Missing required upload information" });
+    }
+
+    // Check storage limits with the actual file size
+    const { getUserPlan, getStorageUsage } = require("../middleware/featureGating");
+    const plan = await getUserPlan(userId);
+    const currentStorageUsage = await getStorageUsage(userId);
+    const fileSizeInGB = parseInt(fileSize) / (1024 * 1024 * 1024); // Convert bytes to GB
+    
+    const planLimits = {
+      free: 1, // 1GB
+      pro: 10, // 10GB  
+      enterprise: 100 // 100GB
+    };
+    
+    const storageLimit = planLimits[plan] || planLimits.free;
+    
+    if (currentStorageUsage + fileSizeInGB > storageLimit) {
+      return res
+        .status(403)
+        .json({ 
+          message: `Upload would exceed storage limit. Current usage: ${currentStorageUsage.toFixed(2)}GB, File size: ${fileSizeInGB.toFixed(2)}GB, Limit: ${storageLimit}GB`,
+          upgradeRequired: true 
+        });
     }
 
     // Create record in database for tracking

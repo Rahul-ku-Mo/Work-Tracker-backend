@@ -5,17 +5,58 @@ const prisma = new PrismaClient();
 
 class BillingController {
 
-  // Get user's subscription status
+  // Helper methods to eliminate repetitive code
+  getPlanMapping() {
+    return {
+      FREE: "free",
+      PRO: "pro",
+      ENTERPRISE: "enterprise",
+      TEAM: "team"
+    };
+  }
+
+  async getUserWithSubscription(userId) {
+    return await prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscription: true },
+    });
+  }
+
+  async getSubscriptionByPaddleId(paddleSubscriptionId) {
+    return await prisma.subscription.findUnique({
+      where: { paddleSubscriptionId },
+      include: { user: true },
+    });
+  }
+
+  determinePlanFromPriceId(priceId) {
+    if (priceId === process.env.PADDLE_PRICE_ID_PRO) {
+      return "PRO";
+    } else if (priceId === process.env.PADDLE_PRICE_ID_BUSINESS) {
+      return "ENTERPRISE";
+    }
+    return "FREE";
+  }
+
+  async updateSubscriptionStatus(paddleSubscriptionId, statusData) {
+    return await prisma.subscription.update({
+      where: { paddleSubscriptionId },
+      data: statusData,
+    });
+  }
+
+  async updateUserAccess(userId, isPaidUser) {
+    return await prisma.user.update({
+      where: { id: userId },
+      data: { isPaidUser },
+    });
+  }
+
+  // Get user's subscription status with access control
   async getSubscriptionStatus(req, res) {
     try {
       const userId = req.user.userId;
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          subscription: true,
-        },
-      });
+      const user = await this.getUserWithSubscription(userId);
 
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -26,25 +67,26 @@ class BillingController {
         return res.json({
           plan: "free",
           status: "active",
+          currentPeriodStart: null,
           currentPeriodEnd: null,
           cancelAtPeriodEnd: false,
+          accessRestricted: false,
         });
       }
 
-      // Convert enum values to lowercase for frontend compatibility
-      const planMapping = {
-        FREE: "free",
-        PRO: "pro",
-        ENTERPRISE: "enterprise",
-        TEAM: "team"
-      };
+      const planMapping = this.getPlanMapping();
+      const isAccessRestricted = user.subscription.status === "past_due" || 
+                                user.subscription.status === "canceled";
 
       res.json({
         plan: planMapping[user.subscription.plan] || "free",
         status: user.subscription.status || "active",
+        currentPeriodStart: user.subscription.currentPeriodStart,
         currentPeriodEnd: user.subscription.currentPeriodEnd,
         cancelAtPeriodEnd: user.subscription.cancelAtPeriodEnd || false,
         subscriptionId: user.subscription.paddleSubscriptionId,
+        accessRestricted: isAccessRestricted,
+        trialExpired: user.subscription.status === "past_due" && !user.isPaidUser,
       });
     } catch (error) {
       console.error("Error getting subscription status:", error);
@@ -56,11 +98,7 @@ class BillingController {
   async cancelSubscription(req, res) {
     try {
       const userId = req.user.userId;
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { subscription: true },
-      });
+      const user = await this.getUserWithSubscription(userId);
 
       // If subscription ID is missing, try to fetch it from Paddle
       if (!user.subscription?.paddleSubscriptionId && user.paddleCustomerId) {
@@ -103,61 +141,6 @@ class BillingController {
       res.json({ message: "Subscription canceled successfully" });
     } catch (error) {
       console.error("Error canceling subscription:", error);
-      res.status(500).json({ error: error.message });
-    }
-  }
-
-  // Reactivate subscription
-  async reactivateSubscription(req, res) {
-    try {
-      const userId = req.user.userId;
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { subscription: true },
-      });
-
-      // If subscription ID is missing, try to fetch it from Paddle
-      if (!user.subscription?.paddleSubscriptionId && user.paddleCustomerId) {
-        console.log("Missing subscription ID for reactivation, attempting to fetch from Paddle...");
-        try {
-          const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(user.paddleCustomerId);
-          if (paddleSubscription) {
-            // Update the subscription with the found ID
-            await prisma.subscription.update({
-              where: { userId },
-              data: { paddleSubscriptionId: paddleSubscription.id },
-            });
-            // Refresh user data
-            const updatedUser = await prisma.user.findUnique({
-              where: { id: userId },
-              include: { subscription: true },
-            });
-            user.subscription = updatedUser.subscription;
-            console.log(`Found and updated subscription ID for reactivation: ${paddleSubscription.id}`);
-          }
-        } catch (error) {
-          console.error("Error fetching subscription ID for reactivation:", error);
-        }
-      }
-
-      if (!user?.subscription?.paddleSubscriptionId) {
-        return res.status(400).json({ error: "No subscription found" });
-      }
-
-      await paddleService.resumeSubscription(
-        user.subscription.paddleSubscriptionId
-      );
-
-      // Update local subscription status
-      await prisma.subscription.update({
-        where: { userId },
-        data: { cancelAtPeriodEnd: false },
-      });
-
-      res.json({ message: "Subscription reactivated successfully" });
-    } catch (error) {
-      console.error("Error reactivating subscription:", error);
       res.status(500).json({ error: error.message });
     }
   }
@@ -266,14 +249,15 @@ class BillingController {
   async handleWebhook(req, res) {
     try {
       const signature = req.headers["paddle-signature"];
-      const body = req.body;
-
+      // Convert Buffer to string for signature verification and JSON parsing
+      const bodyString = req.body.toString('utf8');
+      
       // Verify webhook signature
-      if (!paddleService.verifyWebhookSignature(body, signature)) {
+      if (!paddleService.verifyWebhookSignature(bodyString, signature)) {
         return res.status(400).json({ error: "Invalid webhook signature" });
       }
 
-      const event = JSON.parse(body);
+      const event = JSON.parse(bodyString);
 
       switch (event.event_type) {
         case "checkout.session.completed":
@@ -282,11 +266,21 @@ class BillingController {
         case "subscription.canceled":
           await this.handleSubscriptionCanceled(event.data);
           break;
-
-        case "subscription.paused":
-          await this.handleSubscriptionPaused(event.data);
+        case "subscription.created":
+          await this.handleSubscriptionCreated(event.data);
           break;
-
+        case "subscription.past_due":
+          await this.handleSubscriptionPastDue(event.data);
+          break;
+        case "transaction.payment_failed":
+          await this.handlePaymentFailed(event.data);
+          break;
+        case "transaction.past_due":
+          await this.handleTransactionPastDue(event.data);
+          break;
+        case "transaction.completed":
+          await this.handleTransactionCompleted(event.data);
+          break;
         case "subscription.resumed":
           await this.handleSubscriptionResumed(event.data);
           break;
@@ -302,6 +296,58 @@ class BillingController {
     }
   }
 
+  async handleSubscriptionCreated(data) {
+   try {
+     const newSubscriptionId = data.id;
+     const customerId = data.customer_id;
+
+     const user = await prisma.user.findUnique({
+      where: { paddleCustomerId: customerId },
+     });
+
+     if (!user) {
+      console.log("User not found for customer:", customerId);
+      return;
+     }
+
+     // Determine plan based on subscription items
+     let plan = "PRO"; // Default fallback
+     if (data.items && data.items.length > 0) {
+       const priceId = data.items[0].price.id;
+       plan = this.determinePlanFromPriceId(priceId);
+     }
+
+     // Get billing period dates
+     const currentPeriodStart = new Date(data.current_billing_period?.starts_at || data.started_at);
+     const currentPeriodEnd = new Date(data.current_billing_period?.ends_at || data.next_billed_at);
+
+     await prisma.subscription.upsert({
+      where: { userId: user.id },
+      update: { 
+        paddleSubscriptionId: newSubscriptionId, 
+        status: data.status || "active",
+        plan: plan,
+        currentPeriodStart: currentPeriodStart,
+        currentPeriodEnd: currentPeriodEnd,
+        cancelAtPeriodEnd: false
+      },
+      create: {
+        userId: user.id,
+        paddleSubscriptionId: newSubscriptionId,
+        status: data.status || "active",
+        plan: plan,
+        currentPeriodStart: currentPeriodStart,
+        currentPeriodEnd: currentPeriodEnd,
+        cancelAtPeriodEnd: false
+      }
+     });
+
+     console.log(`Subscription created successfully: ${newSubscriptionId} (Plan: ${plan})`);
+   } catch (error) {
+     console.error("Error handling subscription created:", error);
+   }
+  }
+
   async handleSubscriptionCanceled(data) {
     try {
       await prisma.subscription.update({
@@ -312,22 +358,91 @@ class BillingController {
         },
       });
 
+      // Revoke user's paid access
+      await this.revokeUserAccess(data.id, "Subscription canceled");
+
       console.log(`Subscription canceled: ${data.id}`);
     } catch (error) {
       console.error("Error handling subscription canceled:", error);
     }
   }
 
-  async handleSubscriptionPaused(data) {
+  async handlePaymentFailed(data) {
+    try {
+      console.log(`Payment failed for transaction: ${data.id}`);
+      
+      // If this is related to a subscription, revoke access
+      if (data.subscription_id) {
+        await prisma.subscription.update({
+          where: { paddleSubscriptionId: data.subscription_id },
+          data: {
+            status: "past_due",
+          },
+        });
+
+        await this.revokeUserAccess(data.subscription_id, "Payment failed");
+        console.log(`Access revoked for subscription ${data.subscription_id} due to payment failure`);
+      }
+    } catch (error) {
+      console.error("Error handling payment failed:", error);
+    }
+  }
+
+  async handleTransactionPastDue(data) {
+    try {
+      console.log(`Transaction past due: ${data.id}`);
+      
+      // If this is related to a subscription, revoke access
+      if (data.subscription_id) {
+        await prisma.subscription.update({
+          where: { paddleSubscriptionId: data.subscription_id },
+          data: {
+            status: "past_due",
+          },
+        });
+
+        await this.revokeUserAccess(data.subscription_id, "Transaction past due");
+        console.log(`Access revoked for subscription ${data.subscription_id} due to past due transaction`);
+      }
+    } catch (error) {
+      console.error("Error handling transaction past due:", error);
+    }
+  }
+
+  async handleSubscriptionPastDue(data) {
     try {
       await prisma.subscription.update({
         where: { paddleSubscriptionId: data.id },
-        data: { status: "paused" },
+        data: {
+          status: "past_due",
+        },
       });
 
-      console.log(`Subscription paused: ${data.id}`);
+      await this.revokeUserAccess(data.id, "Subscription past due");
+      console.log(`Subscription past due: ${data.id}`);
     } catch (error) {
-      console.error("Error handling subscription paused:", error);
+      console.error("Error handling subscription past due:", error);
+    }
+    }
+
+  async handleTransactionCompleted(data) {
+    try {
+      console.log(`Transaction completed: ${data.id}`);
+      
+      // If this is related to a subscription, restore access
+      if (data.subscription_id) {
+        await prisma.subscription.update({
+          where: { paddleSubscriptionId: data.subscription_id },
+          data: {
+            status: "active",
+          },
+        });
+
+        await this.restoreUserAccess(data.subscription_id, "Payment completed");
+        console.log(`Access restored for subscription ${data.subscription_id} - payment completed`);
+      }
+    } catch (error) {
+      console.error("Error handling transaction completed:", error);
     }
   }
 
@@ -341,135 +456,47 @@ class BillingController {
         },
       });
 
+      await this.restoreUserAccess(data.id, "Subscription resumed");
       console.log(`Subscription resumed: ${data.id}`);
     } catch (error) {
       console.error("Error handling subscription resumed:", error);
     }
   }
 
-  // Create subscription from frontend (for Paddle checkout completed events)
-  async createSubscription(req, res) {
+  // Helper method to revoke user access
+  async revokeUserAccess(subscriptionId, reason) {
     try {
-      const { priceId, customerId, email, billingCycle, status } = req.body;
+      const subscription = await this.getSubscriptionByPaddleId(subscriptionId);
 
-      if (!priceId || !customerId || !email || !billingCycle || !status) {
-        return res.status(400).json({
-          error:
-            "Missing required fields: priceId, customerId, email, billingCycle, status",
-        });
+      if (!subscription) {
+        console.log(`No subscription found for ID: ${subscriptionId}`);
+        return;
       }
 
-      if (status !== "completed") {
-        return res.status(400).json({
-          error: "Subscription can only be created with completed status",
-        });
-      }
-
-      // Determine plan based on price ID
-      let plan = "FREE";
-      if (priceId === process.env.PADDLE_PRICE_ID_PRO) {
-        plan = "PRO";
-      } else if (priceId === process.env.PADDLE_PRICE_ID_BUSINESS) {
-        plan = "ENTERPRISE";
-      }
-
-      // Find user by email
-      const user = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          error: "User not found",
-        });
-      }
-
-      const userId = user.id;
-
-      // Calculate billing period dates
-      const currentDate = new Date();
-      const currentPeriodStart = new Date(currentDate);
-      const nextBillingDate = new Date(currentDate);
-      
-      if (billingCycle === "monthly") {
-        nextBillingDate.setMonth(currentDate.getMonth() + 1);
-      } else if (billingCycle === "yearly") {
-        nextBillingDate.setFullYear(currentDate.getFullYear() + 1);
-      }
-
-
-
-      // Get the Paddle subscription ID by fetching subscriptions for this customer
-      let paddleSubscriptionId = null;
-      try {
-        console.log(`Fetching subscription for customer: ${customerId}`);
-        const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(customerId);
-        
-        if (paddleSubscription) {
-          paddleSubscriptionId = paddleSubscription.id;
-          console.log(`Found subscription ID: ${paddleSubscriptionId}`);
-        } else {
-          console.warn(`No active subscription found for customer: ${customerId}`);
-        }
-      } catch (error) {
-        console.error('Error fetching Paddle subscription:', error);
-        // Continue without subscription ID - it can be updated later
-      }
-
-      // Create or update subscription
-      const subscription = await prisma.subscription.upsert({
-        where: { userId },
-        update: {
-          plan,
-          status: "active",
-          currentPeriodStart,
-          currentPeriodEnd: nextBillingDate,
-          cancelAtPeriodEnd: false,
-          paddleSubscriptionId, // Update with the actual subscription ID
-        },
-        create: {
-          userId,
-          plan,
-          status: "active",
-          currentPeriodStart,
-          currentPeriodEnd: nextBillingDate,
-          cancelAtPeriodEnd: false,
-          paddleSubscriptionId, // Set the actual subscription ID
-        },
-      });
-
-      // Convert enum value to lowercase for frontend compatibility
-      const planMapping = {
-        FREE: "free",
-        PRO: "pro",
-        ENTERPRISE: "enterprise",
-        TEAM: "team"
-      };
-
-      console.log(
-        `Subscription created/updated for user ${userId}: ${planMapping[plan] || "free"} (${billingCycle}) with Paddle ID: ${paddleSubscriptionId}`
-      );
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: { paddleCustomerId: customerId },
-      });
-
-      
-      res.status(201).json({
-        message: "Subscription created successfully",
-        subscription: {
-          plan: planMapping[plan] || "free",
-          status: "active",
-          billingCycle,
-          nextBillingDate: nextBillingDate.toISOString(),
-        },
-      });
+      await this.updateUserAccess(subscription.userId, false);
+      console.log(`✅ Access revoked for user ${subscription.user.email} - Reason: ${reason}`);
     } catch (error) {
-      console.error("Error creating subscription:", error);
-      res.status(500).json({ error: error.message });
+      console.error("Error revoking user access:", error);
     }
   }
+
+  // Helper method to restore user access
+  async restoreUserAccess(subscriptionId, reason) {
+    try {
+      const subscription = await this.getSubscriptionByPaddleId(subscriptionId);
+
+      if (!subscription) {
+        console.log(`No subscription found for ID: ${subscriptionId}`);
+        return;
+      }
+
+      await this.updateUserAccess(subscription.userId, true);
+      console.log(`✅ Access restored for user ${subscription.user.email} - Reason: ${reason}`);
+    } catch (error) {
+      console.error("Error restoring user access:", error);
+    }
+  }
+
 
   // Get usage statistics for current user
   async getUsageStatistics(req, res) {
@@ -505,47 +532,14 @@ class BillingController {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // If subscription ID is missing, try to fetch it from Paddle
-      if (!user.subscription?.paddleSubscriptionId && user.paddleCustomerId) {
-        console.log("Missing subscription ID, attempting to fetch from Paddle...");
-        try {
-          const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(user.paddleCustomerId);
-        
-          if (paddleSubscription) {
-            // Update the subscription with the found ID
-            await prisma.subscription.update({
-              where: { userId },
-              data: { paddleSubscriptionId: paddleSubscription.id },
-            });
-            // Refresh user data
-            const updatedUser = await prisma.user.findUnique({
-              where: { id: userId },
-              include: { subscription: true },
-            });
-            user.subscription = updatedUser.subscription;
-            console.log(`Found and updated subscription ID: ${paddleSubscription.id}`);
-          }
-        } catch (error) {
-          console.error("Error fetching subscription ID:", error);
-        }
-      }
-
       if (!user.subscription?.paddleSubscriptionId) {
-        return res.status(400).json({ error: "No active subscription found" });
+        return res.status(404).json({ error: "No active subscription found" });
       }
 
       // Determine the new plan based on price ID
-      let newPlan = "FREE";
-      if (newPriceId === process.env.PADDLE_PRICE_ID_PRO) {
-        newPlan = "PRO";
-      } else if (newPriceId === process.env.PADDLE_PRICE_ID_BUSINESS) {
-        newPlan = "ENTERPRISE";
-      }
+      const newPlan = this.determinePlanFromPriceId(newPriceId);
 
       // Update subscription in Paddle
-
-     
-
       console.log("Updating subscription in Paddle");
       const updatedSubscription = await paddleService.updateSubscription(
         user.subscription.paddleSubscriptionId,
@@ -567,12 +561,7 @@ class BillingController {
       });
 
       // Convert enum value to lowercase for frontend compatibility
-      const planMapping = {
-        FREE: "free",
-        PRO: "pro",
-        ENTERPRISE: "enterprise",
-        TEAM: "team"
-      };
+      const planMapping = this.getPlanMapping();
 
       console.log(
         `Subscription updated for user ${userId}: ${planMapping[newPlan] || "free"}`
@@ -592,39 +581,12 @@ class BillingController {
     }
   }
 
-  // Create billing portal session
-  async createBillingPortalSession(req, res) {
-    try {
-      const { returnUrl } = req.body;
-      const userId = req.user.userId;
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { paddleCustomerId: true },
-      });
-
-      if (!user?.paddleCustomerId) {
-        return res.status(400).json({ error: "No billing account found" });
-      }
-
-      const portalUrl = await paddleService.getCustomerPortalUrl(
-        user.paddleCustomerId,
-        returnUrl || `${process.env.FRONTEND_URL}/billing`
-      );
-
-      res.json({ url: portalUrl });
-    } catch (error) {
-      console.error("Error creating billing portal session:", error);
-      res.status(500).json({ error: error.message });
-    }
-  }
-
   // Test Paddle configuration (development only)
   async testPaddleConfig(req, res) {
     try {
       const config = {
-        hasApiKey: !!process.env.PADDLE_API_KEY_SB,
-        environment: process.env.PADDLE_ENVIRONMENT_SB || "sandbox",
+        hasApiKey: !!process.env.PADDLE_API_KEY,
+        environment: process.env.PADDLE_ENVIRONMENT || "sandbox",
         hasProPriceId: !!process.env.PADDLE_PRICE_ID_PRO,
         hasBusinessPriceId: !!process.env.PADDLE_PRICE_ID_BUSINESS,
         frontendUrl: process.env.FRONTEND_URL,
@@ -670,66 +632,70 @@ class BillingController {
     }
   }
 
-  // Fix missing subscription IDs (utility method)
-  async fixMissingSubscriptionIds(req, res) {
+  // Create Paddle customer for existing users who don't have one
+  async createCustomerForExistingUser(req, res) {
     try {
-      // Find all subscriptions with null paddleSubscriptionId but have paddleCustomerId
-      const usersWithMissingSubIds = await prisma.user.findMany({
-        where: {
-          paddleCustomerId: {
-            not: null,
-          },
-          subscription: {
-            paddleSubscriptionId: null,
-            status: "active",
-          },
-        },
-        include: {
-          subscription: true,
-        },
+      const userId = req.user.userId;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          paddleCustomerId: true
+        }
       });
 
-      console.log(`Found ${usersWithMissingSubIds.length} users with missing subscription IDs`);
-
-      const fixedCount = [];
-
-      for (const user of usersWithMissingSubIds) {
-        try {
-          console.log(`Fixing subscription ID for user ${user.id} with customer ID ${user.paddleCustomerId}`);
-          
-          const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(user.paddleCustomerId);
-          
-          if (paddleSubscription) {
-            await prisma.subscription.update({
-              where: { userId: user.id },
-              data: { paddleSubscriptionId: paddleSubscription.id },
-            });
-            
-            fixedCount.push({
-              userId: user.id,
-              email: user.email,
-              subscriptionId: paddleSubscription.id,
-            });
-            
-            console.log(`Fixed subscription ID for user ${user.id}: ${paddleSubscription.id}`);
-          } else {
-            console.warn(`No active subscription found for customer ${user.paddleCustomerId}`);
-          }
-        } catch (error) {
-          console.error(`Error fixing subscription for user ${user.id}:`, error);
-        }
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
       }
 
+      // If user already has a Paddle customer ID, return it
+      if (user.paddleCustomerId) {
+        return res.json({
+          message: "User already has a Paddle customer ID",
+          paddleCustomerId: user.paddleCustomerId
+        });
+      }
+
+      // Create Paddle customer
+      const paddleCustomerId = await paddleService.createCustomer({
+        email: user.email,
+        name: user.name,
+        userId: user.id
+      });
+
+      // Update user with Paddle customer ID
+      await prisma.user.update({
+        where: { id: userId },
+        data: { paddleCustomerId }
+      });
+
+      console.log(`✅ Created Paddle customer ${paddleCustomerId} for existing user ${user.email}`);
+
       res.json({
-        message: `Fixed ${fixedCount.length} subscription IDs`,
-        fixed: fixedCount,
-        totalProcessed: usersWithMissingSubIds.length,
+        message: "Paddle customer created successfully",
+        paddleCustomerId
       });
     } catch (error) {
-      console.error("Error fixing missing subscription IDs:", error);
+      console.error("Error creating Paddle customer for existing user:", error);
       res.status(500).json({ error: error.message });
     }
   }
 }
 
-module.exports = new BillingController();
+// Create the controller instance
+const billingController = new BillingController();
+
+// Bind all methods to ensure they're accessible with correct context
+billingController.getSubscriptionStatus = billingController.getSubscriptionStatus.bind(billingController);
+billingController.cancelSubscription = billingController.cancelSubscription.bind(billingController);
+billingController.getPlans = billingController.getPlans.bind(billingController);
+billingController.handleWebhook = billingController.handleWebhook.bind(billingController);
+billingController.getUsageStatistics = billingController.getUsageStatistics.bind(billingController);
+billingController.updateSubscription = billingController.updateSubscription.bind(billingController);
+billingController.testPaddleConfig = billingController.testPaddleConfig.bind(billingController);
+billingController.createCustomerForExistingUser = billingController.createCustomerForExistingUser.bind(billingController);
+
+module.exports = billingController;

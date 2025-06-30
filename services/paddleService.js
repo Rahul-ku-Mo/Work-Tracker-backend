@@ -10,9 +10,65 @@ class PaddleService {
     }
     
     this.paddle = new Paddle(apiKey.trim(), {
-      environment: process.env.PADDLE_ENVIRONMENT || 'production',
+      environment: process.env.PADDLE_ENVIRONMENT || 'sandbox',
     });
   }
+
+  // Verify webhook signature
+  verifyWebhookSignature(body, signature) {
+    try {
+      const webhookSecret = process.env.PADDLE_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        console.error('PADDLE_WEBHOOK_SECRET not configured');
+        return false;
+      }
+
+      // Parse Paddle signature format: ts=timestamp;h1=signature
+      const sigParts = signature.split(';');
+      let timestamp, receivedSignature;
+      
+      for (const part of sigParts) {
+        const [key, value] = part.split('=');
+        if (key === 'ts') {
+          timestamp = value;
+        } else if (key === 'h1') {
+          receivedSignature = value;
+        }
+      }
+
+      if (!timestamp || !receivedSignature) {
+        console.error('Invalid signature format');
+        return false;
+      }
+
+      // Convert body to string if it's not already
+      const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
+      
+      // Create the payload for verification: timestamp:body
+      const payload = `${timestamp}:${bodyString}`;
+      
+      // Create HMAC signature
+      const hmac = crypto.createHmac('sha256', webhookSecret);
+      hmac.update(payload);
+      const expectedSignature = hmac.digest('hex');
+      
+      // Compare signatures using constant-time comparison
+      const isValid = crypto.timingSafeEqual(
+        Buffer.from(receivedSignature, 'hex'),
+        Buffer.from(expectedSignature, 'hex')
+      );
+      
+      if (!isValid) {
+        console.error('Webhook signature verification failed');
+      }
+      
+      return isValid;
+    } catch (error) {
+      console.error('Error verifying webhook signature:', error);
+      return false;
+    }
+  }
+
   // Create or get customer
   async createCustomer({ email, name, userId }) {
     try {
@@ -41,41 +97,6 @@ class PaddleService {
     }
   }
 
-  // Get subscriptions by customer ID
-  async getSubscriptionsByCustomerId(customerId) {
-    try {
-      const subscriptions = await this.paddle.subscriptions.list();
-
-      console.log("Paddle subscriptions", subscriptions);
-      return subscriptions.data || [];
-    } catch (error) {
-      console.error('Failed to get subscriptions by customer ID:', error);
-      throw new Error(`Failed to get subscriptions: ${error.message}`);
-    }
-  }
-
-  // Find and get the latest active subscription for a customer
-  async getLatestSubscriptionForCustomer(customerId) {
-    try {
-      const subscriptions = await this.getSubscriptionsByCustomerId(customerId);
-
-      
-      if (!subscriptions || subscriptions.length === 0) {
-        return null;
-      }
-
-      // Find the most recent active subscription
-      const activeSubscription = subscriptions
-        .filter(sub => sub.status === 'active' || sub.status === 'trialing')
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-
-      return activeSubscription || null;
-    } catch (error) {
-      console.error('Failed to get latest subscription for customer:', error);
-      throw new Error(`Failed to get customer subscription: ${error.message}`);
-    }
-  }
-
   // Cancel subscription {correct}
   async cancelSubscription(subscriptionId) {
     try {
@@ -95,48 +116,6 @@ class PaddleService {
     } catch (error) {
       console.error('Failed to resume subscription:', error);
       throw new Error(`Failed to resume subscription: ${error.message}`);
-    }
-  }
-
-  // Verify webhook signature
-  verifyWebhookSignature(requestBody, signature) {
-    try {
-      const webhookSecret = process.env.PADDLE_WEBHOOK_SECRET;
-      if (!webhookSecret) {
-        console.error('PADDLE_WEBHOOK_SECRET not configured');
-        return false;
-      }
-
-      if (!signature || !requestBody) {
-        console.error('Missing signature or request body');
-        return false;
-      }
-
-      // Remove 'Paddle ' prefix from signature if present
-      const cleanSignature = signature.replace('Paddle ', '').trim();
-      
-      // Create HMAC signature
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      hmac.update(requestBody, 'utf8');
-      const expectedSignature = hmac.digest('hex');
-      
-      // Ensure both signatures are the same length before comparing
-      if (cleanSignature.length !== expectedSignature.length) {
-        console.error('Signature length mismatch:', {
-          received: cleanSignature.length,
-          expected: expectedSignature.length
-        });
-        return false;
-      }
-      
-      // Compare signatures securely
-      return crypto.timingSafeEqual(
-        Buffer.from(cleanSignature, 'hex'),
-        Buffer.from(expectedSignature, 'hex')
-      );
-    } catch (error) {
-      console.error('Webhook verification failed:', error);
-      return false;
     }
   }
 
