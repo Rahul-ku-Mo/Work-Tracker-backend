@@ -1,3 +1,4 @@
+require('dotenv').config();
 const emailService = require('../services/emailService');
 const { prisma } = require('../db');
 
@@ -47,7 +48,7 @@ async function testEmailService() {
     console.log(`✅ Found team: ${team.name} (Code: ${team.joinCode})\n`);
 
     // Test team invitation email (you can change this email)
-    const testEmail = 'test@example.com'; // Change this to your test email
+    const testEmail = 'rajamohanty12345@gmail.com'
     console.log(`3. Testing team invitation email to ${testEmail}...`);
     
     try {
