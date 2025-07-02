@@ -18,12 +18,16 @@ const analyticsRouter = require("./analytics.routes");
 const timeEntryRouter = require("./timeEntry.routes");
 const billingRouter = require("./billing.routes");
 const notesRouter = require("./notes.routes");
+const feedbackRouter = require("./feedback.routes");
 
 // Auth routes
 router.use("/", authRouter);
 
 // Public billing routes (must be before auth middleware)
 router.use("/billing", billingRouter);
+
+// Public feedback routes (no auth required)
+router.use("/", feedbackRouter);
 
 // AWS routes with their own auth middleware
 router.use("/aws", awsRouter);

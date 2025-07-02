@@ -1038,8 +1038,35 @@ const sendBoardInvitation = async (req, res) => {
       }
     });
 
-    // TODO: Send email invitation
-    console.log(`Invitation sent to ${email} for board ${board.title}`);
+    // Send email invitation
+    try {
+      const inviter = await prisma.user.findUnique({
+        where: { id: requestorId },
+        select: { name: true, email: true },
+        include: {
+          team: {
+            select: { name: true }
+          }
+        }
+      });
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const boardUrl = `${frontendUrl}/workspace/board/${boardId}`;
+      
+      await emailService.sendBoardInvitation(
+        email,
+        board.title,
+        inviter.team?.name || 'Your Team',
+        boardUrl,
+        inviter.name || inviter.email,
+        frontendUrl
+      );
+      
+      console.log(`✅ Board invitation email sent to ${email} for board ${board.title}`);
+    } catch (emailError) {
+      console.error('❌ Failed to send board invitation email:', emailError);
+      // Don't fail the request if email fails, but log the error
+    }
 
     res.status(200).json({
       status: 200,
