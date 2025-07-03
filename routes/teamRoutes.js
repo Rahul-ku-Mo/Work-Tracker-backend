@@ -5,7 +5,7 @@ const { requireWithinLimits } = require("../middleware/featureGating");
 const router = express.Router();
 
 // Team routes
-router.route("/").get(teamController.getTeam).post(teamController.createTeam);
+router.route("/").get(teamController.getTeam).post(teamController.createTeam).put(teamController.updateTeam);
 router.route("/invite").post(requireWithinLimits('teamMembers'), teamController.inviteMember);
 router.route("/join").post(requireWithinLimits('teamMembers'), teamController.joinTeam);
 router.route("/members").get(teamController.getTeamMembers);
