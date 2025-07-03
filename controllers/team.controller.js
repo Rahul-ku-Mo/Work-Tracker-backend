@@ -129,6 +129,65 @@ exports.getTeam = async (req, res) => {
   }
 };
 
+exports.updateTeam = async (req, res) => {
+  try {
+    const { name } = req.body;
+    const { userId } = req.user;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        status: 400,
+        message: "Team name is required",
+      });
+    }
+
+    // Find team where user is captain (only captain can update team name)
+    const team = await prisma.team.findFirst({
+      where: { captainId: userId }
+    });
+
+    if (!team) {
+      return res.status(404).json({
+        status: 404,
+        message: "Team not found or you don't have permission to update it",
+      });
+    }
+
+    // Update team name
+    const updatedTeam = await prisma.team.update({
+      where: { id: team.id },
+      data: { name: name.trim() },
+      include: {
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        captain: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        }
+      }
+    });
+
+    return res.status(200).json({
+      status: 200,
+      message: "Team updated successfully",
+      data: updatedTeam
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
 exports.inviteMember = async (req, res) => {
   try {
     const { email } = req.body;
@@ -1126,6 +1185,7 @@ module.exports = {
   createTeam: exports.createTeam,
   getTeam: exports.getTeam,
   getTeams: exports.getTeam, // Alias for getTeam
+  updateTeam: exports.updateTeam,
   inviteMember: exports.inviteMember,
   joinTeam: exports.joinTeam,
   getTeamMembers,
