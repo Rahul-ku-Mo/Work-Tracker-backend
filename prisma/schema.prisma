@@ -85,6 +85,7 @@ model Team {
   sprints            Sprint[]
   performanceMetrics PerformanceMetric[] @relation("teamMetrics")
   performanceSnapshots TeamPerformanceSnapshot[] @relation("teamSnapshots")
+  teamImageUrl       String?
 }
 
 model Board {

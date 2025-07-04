@@ -131,13 +131,13 @@ exports.getTeam = async (req, res) => {
 
 exports.updateTeam = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, teamImageUrl } = req.body;
     const { userId } = req.user;
 
-    if (!name || !name.trim()) {
+    if (!name || !name.trim() || !teamImageUrl) {
       return res.status(400).json({
         status: 400,
-        message: "Team name is required",
+        message: "Team name/ image is required",
       });
     }
 
@@ -156,7 +156,7 @@ exports.updateTeam = async (req, res) => {
     // Update team name
     const updatedTeam = await prisma.team.update({
       where: { id: team.id },
-      data: { name: name.trim() },
+      data: { name: name.trim(), teamImageUrl },
       include: {
         members: {
           select: {
