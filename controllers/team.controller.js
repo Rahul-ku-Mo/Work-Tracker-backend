@@ -566,8 +566,8 @@ exports.validateInviteCode = async (req, res) => {
   }
 };
 
-// Get team boards - both accessible and locked boards for team members
-exports.getTeamBoards = async (req, res) => {
+// Get team workspaces - both accessible and locked workspaces for team members
+exports.getTeamWorkspaces = async (req, res) => {
   try {
     const userId = req.user?.userId;
 
@@ -597,8 +597,8 @@ exports.getTeamBoards = async (req, res) => {
 
     const teamMemberIds = user.team.members.map(member => member.id);
 
-    // Get all boards created by team members
-    const allTeamBoards = await prisma.board.findMany({
+    // Get all workspaces created by team members
+    const allTeamWorkspaces = await prisma.workspace.findMany({
       where: {
         userId: {
           in: teamMemberIds
@@ -632,26 +632,227 @@ exports.getTeamBoards = async (req, res) => {
       }
     });
 
-    // Add access status to each board
-    const boardsWithAccess = allTeamBoards.map(board => ({
-      ...board,
-      hasAccess: board.members.length > 0,
-      userRole: board.members[0]?.role || null,
-      isOwner: board.userId === userId,
-      createdBy: board.user.name || board.user.email
+    // Add access status to each workspace
+    const workspacesWithAccess = allTeamWorkspaces.map(workspace => ({
+      ...workspace,
+      hasAccess: workspace.members.length > 0,
+      userRole: workspace.members[0]?.role || null,
+      isOwner: workspace.userId === userId,
+      createdBy: workspace.user.name || workspace.user.email
     }));
 
     return res.status(200).json({
       status: 200,
-      message: "Team boards retrieved successfully",
-      data: boardsWithAccess
+      message: "Team workspaces retrieved successfully",
+      data: workspacesWithAccess
     });
   } catch (error) {
-    console.error('Error in getTeamBoards:', error);
+    console.error('Error in getTeamWorkspaces:', error);
     res.status(500).json({ 
       status: 500, 
       message: "Internal Server Error" 
     });
+  }
+};
+
+// Get workspace members
+exports.getWorkspaceMembers = async (req, res) => {
+  const { workspaceId } = req.params;
+
+  try {
+    const members = await prisma.workspaceUser.findMany({
+      where: {
+        workspaceId: parseInt(workspaceId),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "Success",
+      data: members,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+// Add user to workspace
+exports.addUserToWorkspace = async (req, res) => {
+  const { workspaceId, userId } = req.params;
+  const { role = "MEMBER" } = req.body;
+
+  try {
+    // Check if user is already a member
+    const existingMember = await prisma.workspaceUser.findFirst({
+      where: {
+        workspaceId: parseInt(workspaceId),
+        userId: userId,
+      },
+    });
+
+    if (existingMember) {
+      return res.status(400).json({
+        status: 400,
+        message: "User is already a member of this workspace",
+      });
+    }
+
+    // Add user to workspace
+    const workspaceMember = await prisma.workspaceUser.create({
+      data: {
+        workspaceId: parseInt(workspaceId),
+        userId: userId,
+        role,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      status: 201,
+      message: "User added to workspace successfully",
+      data: workspaceMember,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+// Remove user from workspace
+exports.removeUserFromWorkspace = async (req, res) => {
+  const { workspaceId, userId } = req.params;
+
+  try {
+    await prisma.workspaceUser.deleteMany({
+      where: {
+        workspaceId: parseInt(workspaceId),
+        userId: userId,
+      },
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: "User removed from workspace successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
+// Send workspace invitation
+exports.sendWorkspaceInvitation = async (req, res) => {
+  const { workspaceId } = req.params;
+  const { email, role = "MEMBER" } = req.body;
+  const { userId } = req.user;
+
+  try {
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        status: 404,
+        message: "User not found",
+      });
+    }
+
+    // Check if user is already a member
+    const existingMember = await prisma.workspaceUser.findFirst({
+      where: {
+        workspaceId: parseInt(workspaceId),
+        userId: user.id,
+      },
+    });
+
+    if (existingMember) {
+      return res.status(400).json({
+        status: 400,
+        message: "User is already a member of this workspace",
+      });
+    }
+
+    // Add user to workspace
+    const workspaceMember = await prisma.workspaceUser.create({
+      data: {
+        workspaceId: parseInt(workspaceId),
+        userId: user.id,
+        role,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    // Send email notification
+    try {
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: parseInt(workspaceId) },
+        include: {
+          user: {
+            select: { name: true, email: true }
+          }
+        }
+      });
+
+      const inviter = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true }
+      });
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const workspaceUrl = `${frontendUrl}/workspace/${workspaceId}`;
+      
+      await emailService.sendWorkspaceInvitation(
+        user.email,
+        workspace.title,
+        workspace.user.name || workspace.user.email,
+        workspaceUrl,
+        inviter.name || inviter.email,
+        frontendUrl
+      );
+    } catch (emailError) {
+      console.error('Failed to send workspace invitation email:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    res.status(201).json({
+      status: 201,
+      message: "Workspace invitation sent successfully",
+      data: workspaceMember,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
@@ -670,9 +871,9 @@ const getTeamMembers = async (req, res) => {
         include: {
           members: {
             include: {
-              boards: {
+              workspaces: {
                 include: {
-                  board: {
+                  workspace: {
                     select: {
                       id: true,
                       title: true,
@@ -696,9 +897,9 @@ const getTeamMembers = async (req, res) => {
             include: {
               members: {
                 include: {
-                  boards: {
+                  workspaces: {
                     include: {
-                      board: {
+                      workspace: {
                         select: {
                           id: true,
                           title: true,
@@ -744,13 +945,13 @@ const getTeamMembers = async (req, res) => {
       });
     }
 
-    // Format response with board access info
+    // Format response with workspace access info
     const membersWithAccess = team.members.map(member => ({
       ...member,
-      boardAccess: member.boards?.map(bu => ({
-        board: bu.board,
-        role: bu.role,
-        canEdit: bu.role === 'ADMIN'
+      boardAccess: member.workspaces?.map(wu => ({
+        board: wu.workspace,
+        role: wu.role,
+        canEdit: wu.role === 'ADMIN'
       })) || []
     }));
 
@@ -768,18 +969,18 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
-// Add user to board (Admin only)
-const addUserToBoard = async (req, res) => {
-  const { boardId, userId } = req.params;
+// Add user to workspace (Admin only)
+const addUserToWorkspace = async (req, res) => {
+  const { workspaceId, userId } = req.params;
   const { role = 'MEMBER' } = req.body;
   const requestorId = req.user?.userId; // Use userId from JWT token
 
   try {
-    // Check if requestor is admin of the board
-    const requestorAccess = await prisma.boardUser.findUnique({
+    // Check if requestor is admin of the workspace
+    const requestorAccess = await prisma.workspaceUser.findUnique({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: requestorId
         }
       }
@@ -788,7 +989,7 @@ const addUserToBoard = async (req, res) => {
     if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
       return res.status(403).json({
         status: 403,
-        message: "Only board admins can add users"
+        message: "Only workspace admins can add users"
       });
     }
 
@@ -804,17 +1005,17 @@ const addUserToBoard = async (req, res) => {
       });
     }
 
-    // Add user to board
-    const boardUser = await prisma.boardUser.upsert({
+    // Add user to workspace
+    const workspaceUser = await prisma.workspaceUser.upsert({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: userId
         }
       },
       update: { role },
       create: {
-        boardId: parseInt(boardId),
+        workspaceId: parseInt(workspaceId),
         userId: userId,
         role
       },
@@ -834,8 +1035,8 @@ const addUserToBoard = async (req, res) => {
 
     res.status(200).json({
       status: 200,
-      message: "User added to board successfully",
-      data: boardUser
+      message: "User added to workspace successfully",
+      data: workspaceUser
     });
   } catch (error) {
     console.log(error);
@@ -843,17 +1044,17 @@ const addUserToBoard = async (req, res) => {
   }
 };
 
-// Remove user from board (Admin only)
-const removeUserFromBoard = async (req, res) => {
-  const { boardId, userId } = req.params;
+// Remove user from workspace (Admin only)
+const removeUserFromWorkspace = async (req, res) => {
+  const { workspaceId, userId } = req.params;
   const requestorId = req.user?.userId;
 
   try {
-    // Check if requestor is admin of the board
-    const requestorAccess = await prisma.boardUser.findUnique({
+    // Check if requestor is admin of the workspace
+    const requestorAccess = await prisma.workspaceUser.findUnique({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: requestorId
         }
       }
@@ -862,15 +1063,15 @@ const removeUserFromBoard = async (req, res) => {
     if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
       return res.status(403).json({
         status: 403,
-        message: "Only board admins can remove users"
+        message: "Only workspace admins can remove users"
       });
     }
 
-    // Remove user from board
-    await prisma.boardUser.delete({
+    // Remove user from workspace
+    await prisma.workspaceUser.delete({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: userId
         }
       }
@@ -878,7 +1079,7 @@ const removeUserFromBoard = async (req, res) => {
 
     res.status(200).json({
       status: 200,
-      message: "User removed from board successfully"
+      message: "User removed from workspace successfully"
     });
   } catch (error) {
     console.log(error);
@@ -886,18 +1087,18 @@ const removeUserFromBoard = async (req, res) => {
   }
 };
 
-// Update user permissions on board (Admin only)
+// Update user permissions on workspace (Admin only)
 const updateUserPermissions = async (req, res) => {
-  const { boardId, userId } = req.params;
+  const { workspaceId, userId } = req.params;
   const { role } = req.body;
   const requestorId = req.user?.userId;
 
   try {
-    // Check if requestor is admin of the board
-    const requestorAccess = await prisma.boardUser.findUnique({
+    // Check if requestor is admin of the workspace
+    const requestorAccess = await prisma.workspaceUser.findUnique({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: requestorId
         }
       }
@@ -906,15 +1107,15 @@ const updateUserPermissions = async (req, res) => {
     if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
       return res.status(403).json({
         status: 403,
-        message: "Only board admins can update permissions"
+        message: "Only workspace admins can update permissions"
       });
     }
 
     // Update user role
-    const updatedBoardUser = await prisma.boardUser.update({
+    const updatedWorkspaceUser = await prisma.workspaceUser.update({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: userId
         }
       },
@@ -935,7 +1136,7 @@ const updateUserPermissions = async (req, res) => {
     res.status(200).json({
       status: 200,
       message: "User permissions updated successfully",
-      data: updatedBoardUser
+      data: updatedWorkspaceUser
     });
   } catch (error) {
     console.log(error);
@@ -1007,18 +1208,18 @@ const toggleUserStatus = async (req, res) => {
   }
 };
 
-// Send board invitation
-const sendBoardInvitation = async (req, res) => {
-  const { boardId } = req.params;
+// Send workspace invitation
+const sendWorkspaceInvitation = async (req, res) => {
+  const { workspaceId } = req.params;
   const { email, role = 'MEMBER' } = req.body;
   const requestorId = req.user?.userId;
 
   try {
-    // Check if requestor is admin of the board
-    const requestorAccess = await prisma.boardUser.findUnique({
+    // Check if requestor is admin of the workspace
+    const requestorAccess = await prisma.workspaceUser.findUnique({
       where: {
-        boardId_userId: {
-          boardId: parseInt(boardId),
+        workspaceId_userId: {
+          workspaceId: parseInt(workspaceId),
           userId: requestorId
         }
       }
@@ -1027,12 +1228,12 @@ const sendBoardInvitation = async (req, res) => {
     if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
       return res.status(403).json({
         status: 403,
-        message: "Only board admins can send invitations"
+        message: "Only workspace admins can send invitations"
       });
     }
 
-    const board = await prisma.board.findUnique({
-      where: { id: parseInt(boardId) }
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: parseInt(workspaceId) }
     });
 
     // Check if user already exists
@@ -1041,11 +1242,11 @@ const sendBoardInvitation = async (req, res) => {
     });
 
     if (existingUser) {
-      // Check if already a board member
-      const existingMembership = await prisma.boardUser.findUnique({
+      // Check if already a workspace member
+      const existingMembership = await prisma.workspaceUser.findUnique({
         where: {
-          boardId_userId: {
-            boardId: parseInt(boardId),
+          workspaceId_userId: {
+            workspaceId: parseInt(workspaceId),
             userId: existingUser.id
           }
         }
@@ -1054,14 +1255,14 @@ const sendBoardInvitation = async (req, res) => {
       if (existingMembership) {
         return res.status(400).json({
           status: 400,
-          message: "User is already a member of this board"
+          message: "User is already a member of this workspace"
         });
       }
 
-      // Add existing user to board
-      const boardUser = await prisma.boardUser.create({
+      // Add existing user to workspace
+      const workspaceUser = await prisma.workspaceUser.create({
         data: {
-          boardId: parseInt(boardId),
+          workspaceId: parseInt(workspaceId),
           userId: existingUser.id,
           role
         },
@@ -1080,16 +1281,16 @@ const sendBoardInvitation = async (req, res) => {
 
       return res.status(200).json({
         status: 200,
-        message: "Existing user added to board successfully",
-        data: boardUser
+        message: "Existing user added to workspace successfully",
+        data: workspaceUser
       });
     }
 
     // Create invitation for new user
-    const invitation = await prisma.boardInvitation.create({
+    const invitation = await prisma.workspaceInvitation.create({
       data: {
         email,
-        boardId: parseInt(boardId),
+        workspaceId: parseInt(workspaceId),
         role,
         invitedBy: requestorId,
         token: generateInvitationToken(),
@@ -1110,20 +1311,20 @@ const sendBoardInvitation = async (req, res) => {
       });
 
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const boardUrl = `${frontendUrl}/workspace/board/${boardId}`;
+      const workspaceUrl = `${frontendUrl}/workspaces/${workspaceId}`;
       
-      await emailService.sendBoardInvitation(
+      await emailService.sendWorkspaceInvitation(
         email,
-        board.title,
+        workspace.title,
         inviter.team?.name || 'Your Team',
-        boardUrl,
+        workspaceUrl,
         inviter.name || inviter.email,
         frontendUrl
       );
       
-      console.log(`✅ Board invitation email sent to ${email} for board ${board.title}`);
+      console.log(`✅ Workspace invitation email sent to ${email} for workspace ${workspace.title}`);
     } catch (emailError) {
-      console.error('❌ Failed to send board invitation email:', emailError);
+      console.error('❌ Failed to send workspace invitation email:', emailError);
       // Don't fail the request if email fails, but log the error
     }
 
@@ -1138,13 +1339,13 @@ const sendBoardInvitation = async (req, res) => {
   }
 };
 
-// Get board members with permissions
-const getBoardMembers = async (req, res) => {
-  const { boardId } = req.params;
+// Get workspace members with permissions
+const getWorkspaceMembers = async (req, res) => {
+  const { workspaceId } = req.params;
 
   try {
-    const boardUsers = await prisma.boardUser.findMany({
-      where: { boardId: parseInt(boardId) },
+    const workspaceUsers = await prisma.workspaceUser.findMany({
+      where: { workspaceId: parseInt(workspaceId) },
       include: {
         user: {
           select: {
@@ -1168,7 +1369,7 @@ const getBoardMembers = async (req, res) => {
     res.status(200).json({
       status: 200,
       message: "Success",
-      data: boardUsers
+      data: workspaceUsers
     });
   } catch (error) {
     console.log(error);
@@ -1189,13 +1390,13 @@ module.exports = {
   inviteMember: exports.inviteMember,
   joinTeam: exports.joinTeam,
   getTeamMembers,
-  addUserToBoard,
-  removeUserFromBoard,
+  addUserToWorkspace,
+  removeUserFromWorkspace,
   updateUserPermissions,
   toggleUserStatus,
-  sendBoardInvitation,
-  getBoardMembers,
+  sendWorkspaceInvitation,
+  getWorkspaceMembers,
   validateInviteCode: exports.validateInviteCode,
-  getTeamBoards: exports.getTeamBoards
+  getTeamWorkspaces: exports.getTeamWorkspaces
 };
 

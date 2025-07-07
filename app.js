@@ -21,39 +21,39 @@ app.use((req, res, next) => {
   next();
 });
 
-// Improved CORS configuration
+// Optimized CORS configuration - Pre-compute allowed origins
+const ALLOWED_ORIGINS = [
+  process.env.FRONTEND_URL,
+  'https://app.pulseboard.co.in',
+  'https://www.pulseboard.co.in',
+].filter(Boolean);
+
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    // In production, replace with your actual frontend domains
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      'https://app.pulseboard.co.in',
-      'https://www.pulseboard.co.in',
-    ].filter(Boolean);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Use Set for O(1) lookup instead of O(n) indexOf
+    if (ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`CORS blocked origin: ${origin}`);
+      // Remove console.warn to reduce overhead
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
+  credentials: false, // Disable credentials to reduce preflight requests
   optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Remove OPTIONS (handled automatically)
+  allowedHeaders: ['Content-Type', 'Authorization'], // Minimize headers
 };
 
-// Use CORS with options in production, allow all in development
+// Use CORS with options in production, optimized for development
 if (process.env.NODE_ENV === 'production') {
   app.use(cors(corsOptions));
 } else {
   app.use(cors({
     origin: "*",
-    credentials: true
+    credentials: false // Disable credentials in development too
   }));
 }
 

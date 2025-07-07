@@ -158,9 +158,9 @@ class BillingController {
           interval: "month",
           trialDays: 14,
           features: [
-            "5 projects",
+            "5 workspaces",
             "15 team members",
-            "100 tasks per project",
+            "100 tasks per workspace",
             "1GB storage",
             "Basic task management",
             "7-day activity history",
@@ -168,7 +168,7 @@ class BillingController {
             "14-day free trial",
           ],
           limits: {
-            projects: 5,
+            projects: 5, // Keep as 'projects' for API compatibility
             members: 15,
             tasksPerProject: 100,
             storageGB: 1,
@@ -185,7 +185,7 @@ class BillingController {
           interval: "month",
           paddlePrice: process.env.PADDLE_PRICE_ID_PRO,
           features: [
-            "15 projects",
+            "15 workspaces",
             "100 team members",
             "Unlimited tasks",
             "10GB storage",
@@ -194,10 +194,10 @@ class BillingController {
             "30-day activity history",
             "Priority email support",
             "Advanced analytics",
-            "Custom project templates",
+            "Custom workspace templates",
           ],
           limits: {
-            projects: 15,
+            projects: 15, // Keep as 'projects' for API compatibility
             members: 100,
             tasksPerProject: -1, // unlimited
             storageGB: 10,
@@ -214,7 +214,7 @@ class BillingController {
           interval: "month",
           paddlePrice: process.env.PADDLE_PRICE_ID_BUSINESS,
           features: [
-            "Unlimited projects",
+            "Unlimited workspaces",
             "Unlimited team members",
             "Unlimited tasks",
             "100GB storage",
@@ -228,7 +228,7 @@ class BillingController {
             "Dedicated account manager",
           ],
           limits: {
-            projects: -1, // unlimited
+            projects: -1, // unlimited - Keep as 'projects' for API compatibility
             members: -1, // unlimited
             tasksPerProject: -1, // unlimited
             storageGB: 100,

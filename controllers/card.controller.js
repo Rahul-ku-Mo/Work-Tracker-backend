@@ -1,10 +1,11 @@
 const { prisma } = require("../db");
+const { generateCapitalizedSlug, generateUniqueSlug } = require('../utils/slugUtils');
 
 const createCard = async (req, res) => {
   const { columnId } = req.query;
 
   try {
-    const { title, description, labels, attachments, dueDate, assigneeIds, priority, storyPoints } =
+    const { title, description, labels, attachments, dueDate, assigneeIds, priority, storyPoints, projectId } =
       req.body;
 
     const lastCard = await prisma.card.findFirst({
@@ -17,9 +18,18 @@ const createCard = async (req, res) => {
     // If no column was found, start the ordering at 1.
     const newOrder = lastCard ? lastCard.order + 1 : 1;
 
+    // Generate unique slug for the card
+    const slug = await generateUniqueSlug(title, async (slug) => {
+      const existing = await prisma.card.findFirst({
+        where: { slug }
+      });
+      return !!existing;
+    });
+
     const card = await prisma.card.create({
       data: {
         title: title,
+        slug: slug,
         description: description,
         labels: labels,
         attachments: attachments,
@@ -27,6 +37,11 @@ const createCard = async (req, res) => {
         priority: priority,
         storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : 0,
         order: newOrder,
+        project: projectId ? {
+          connect: {
+            id: parseInt(projectId)
+          }
+        } : undefined,
         column: {
           connect: {
             id: parseInt(columnId),
@@ -41,6 +56,7 @@ const createCard = async (req, res) => {
       include: {
         assignees: true,
         comments: true,
+        project: true,
       },
     });
 
@@ -69,6 +85,7 @@ const updateCard = async (req, res) => {
     priority,
     assigneeId,
     storyPoints,
+    projectId,
   } = req.body;
 
   try {
@@ -115,7 +132,21 @@ const updateCard = async (req, res) => {
       order: order ?? currentCard.order,
       priority: priority ?? currentCard.priority,
       storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : currentCard.storyPoints,
+      projectId: projectId !== undefined ? (projectId || null) : currentCard.projectId,
     };
+
+    // Generate new slug if title changed
+    if (title && title !== currentCard.title) {
+      updateData.slug = await generateUniqueSlug(title, async (slug) => {
+        const existing = await prisma.card.findFirst({
+          where: { 
+            slug,
+            id: { not: parseInt(cardId) }
+          }
+        });
+        return !!existing;
+      });
+    }
 
     let wasAssigned = false;
     // Handle assignee assignment/unassignment
@@ -156,6 +187,7 @@ const updateCard = async (req, res) => {
             imageUrl: true,
           },
         },
+        project: true,
       },
     });
 

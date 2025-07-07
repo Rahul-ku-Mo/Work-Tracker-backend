@@ -28,9 +28,9 @@ exports.getUsers = async (req, res) => {
           id: { not: userId },
           AND: {
             NOT: {
-              boards: {
+              workspaces: {
                 some: {
-                  boardId: parseInt(boardId),
+                  workspaceId: parseInt(boardId),
                 },
               },
             },
@@ -98,9 +98,9 @@ exports.getUser = async (req, res) => {
         role: true,
         isPaidUser: true,
         updatedAt: true,
-        boards: {
+        workspaces: {
           include: {
-            board: {
+            workspace: {
               select: {
                 id: true,
                 title: true,

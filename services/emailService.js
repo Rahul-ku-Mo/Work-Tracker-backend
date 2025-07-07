@@ -208,6 +208,93 @@ class EmailService {
     }
   }
 
+  async sendWorkspaceInvitation(email, workspaceName, teamName, inviteLink, inviterName, frontendUrl) {
+    const mailOptions = {
+      from: `"${process.env.APP_NAME || 'PulseBoard'}" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: `You're invited to collaborate on ${workspaceName}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Workspace Invitation</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+            .container { max-width: 600px; margin: 0 auto; background-color: white; }
+            .header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 40px 20px; text-align: center; }
+            .header h1 { color: white; margin: 0; font-size: 28px; font-weight: 600; }
+            .content { padding: 40px 20px; }
+            .workspace-box { background-color: #eff6ff; border-radius: 12px; padding: 30px; margin: 20px 0; text-align: center; border: 2px solid #bfdbfe; }
+            .workspace-name { font-size: 24px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+            .btn { display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; text-decoration: none; padding: 15px 30px; border-radius: 8px; font-weight: 600; margin: 20px 0; transition: transform 0.2s; }
+            .btn:hover { transform: translateY(-2px); }
+            .footer { background-color: #f8fafc; padding: 20px; text-align: center; color: #64748b; font-size: 14px; }
+            .highlight { color: #3b82f6; font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🏢 Workspace Invitation</h1>
+            </div>
+            
+            <div class="content">
+              <h2>Hi there! 👋</h2>
+              <p><strong>${inviterName}</strong> has invited you to collaborate on a workspace in <strong>${teamName}</strong>.</p>
+              
+              <div class="workspace-box">
+                <div class="workspace-name">${workspaceName}</div>
+                <p>You've been granted access to collaborate on this workspace</p>
+                <a href="${inviteLink}" class="btn">Access Workspace</a>
+              </div>
+              
+              <h3>What you can do in this workspace:</h3>
+              <ul style="line-height: 1.8; color: #4a5568;">
+                <li>📝 Create and manage tasks</li>
+                <li>🏷️ Add labels and organize work</li>
+                <li>💬 Comment and collaborate with team members</li>
+                <li>⏱️ Track time spent on tasks</li>
+                <li>📊 View progress and analytics</li>
+              </ul>
+              
+              <p style="margin-top: 30px; color: #64748b;">
+                This invitation was sent by ${inviterName}. If you didn't expect this invitation, please contact your team administrator.
+              </p>
+            </div>
+            
+            <div class="footer">
+              <p>© ${new Date().getFullYear()} PulseBoard. All rights reserved.</p>
+              <p>Collaborate better, achieve more.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        You're invited to collaborate on ${workspaceName}!
+        
+        ${inviterName} has invited you to collaborate on a workspace in ${teamName}.
+        
+        Workspace: ${workspaceName}
+        
+        To access the workspace, click this link: ${inviteLink}
+        
+        This invitation was sent by ${inviterName}.
+      `
+    };
+
+    try {
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log('Workspace invitation email sent:', info.messageId);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.error('Error sending workspace invitation email:', error);
+      throw error;
+    }
+  }
+
   async testConnection() {
     try {
       await this.transporter.verify();

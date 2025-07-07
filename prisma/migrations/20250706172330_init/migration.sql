@@ -5,6 +5,9 @@ CREATE TYPE "AppRole" AS ENUM ('ADMIN', 'USER');
 CREATE TYPE "BoardRole" AS ENUM ('ADMIN', 'MEMBER');
 
 -- CreateEnum
+CREATE TYPE "ProjectRole" AS ENUM ('LEAD', 'MEMBER', 'OBSERVER');
+
+-- CreateEnum
 CREATE TYPE "Message" AS ENUM ('JOIN', 'LEAVE', 'CARD_ASSIGNED', 'CARD_UPDATED', 'CARD_COMPLETED', 'CARD_COMMENTED', 'CARD_DUE_SOON', 'CARD_OVERDUE', 'MENTION');
 
 -- CreateEnum
@@ -32,9 +35,9 @@ CREATE TABLE "User" (
     "isActive" BOOLEAN DEFAULT true,
     "role" "AppRole" NOT NULL DEFAULT 'USER',
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "paddleCustomerId" TEXT,
     "teamId" TEXT,
     "efficiency" INTEGER,
-    "stripeCustomerId" TEXT,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -47,6 +50,7 @@ CREATE TABLE "Team" (
     "captainId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "teamImageUrl" TEXT,
 
     CONSTRAINT "Team_pkey" PRIMARY KEY ("id")
 );
@@ -55,6 +59,7 @@ CREATE TABLE "Team" (
 CREATE TABLE "Board" (
     "id" SERIAL NOT NULL,
     "title" TEXT NOT NULL,
+    "slug" TEXT,
     "userId" TEXT NOT NULL,
     "colorId" TEXT NOT NULL,
     "colorValue" TEXT NOT NULL,
@@ -107,15 +112,51 @@ CREATE TABLE "Column" (
 );
 
 -- CreateTable
+CREATE TABLE "Project" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "summary" TEXT,
+    "description" TEXT,
+    "startDate" TIMESTAMP(3),
+    "targetDate" TIMESTAMP(3),
+    "milestones" TEXT[],
+    "priority" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'Not Started',
+    "teamId" TEXT NOT NULL,
+    "leadId" TEXT,
+    "creatorId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Project_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProjectMember" (
+    "id" TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "role" "ProjectRole" NOT NULL DEFAULT 'MEMBER',
+    "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProjectMember_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Card" (
     "id" SERIAL NOT NULL,
     "title" TEXT NOT NULL,
+    "slug" TEXT,
     "order" INTEGER NOT NULL,
     "description" TEXT,
     "columnId" INTEGER NOT NULL,
+    "projectId" TEXT,
     "labels" TEXT[],
     "attachments" TEXT[],
     "priority" TEXT,
+    "storyPoints" INTEGER DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "dueDate" TIMESTAMP(3),
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -277,18 +318,19 @@ CREATE TABLE "UserPerformanceHistory" (
 );
 
 -- CreateTable
-CREATE TABLE "Subscription" (
+CREATE TABLE "subscriptions" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "stripeSubscriptionId" TEXT NOT NULL,
     "plan" "SubscriptionPlan" NOT NULL,
     "status" TEXT NOT NULL,
     "currentPeriodStart" TIMESTAMP(3) NOT NULL,
     "currentPeriodEnd" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "paddleSubscriptionId" TEXT,
+    "cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false,
 
-    CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "subscriptions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -303,6 +345,53 @@ CREATE TABLE "ImageUpload" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ImageUpload_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NoteCategory" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "hoverColor" TEXT,
+    "userId" TEXT NOT NULL,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "NoteCategory_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Note" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "categoryId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "icon" TEXT,
+    "iconColor" TEXT,
+    "emoji" TEXT,
+    "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+    "isPublic" BOOLEAN NOT NULL DEFAULT false,
+    "priority" INTEGER,
+    "tags" TEXT[],
+    "coverType" TEXT,
+    "coverValue" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Note_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProjectBoard" (
+    "id" TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "boardId" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProjectBoard_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -328,10 +417,16 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "User_paddleCustomerId_key" ON "User"("paddleCustomerId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Team_joinCode_key" ON "Team"("joinCode");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Team_captainId_key" ON "Team"("captainId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Board_slug_key" ON "Board"("slug");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "BoardUser_boardId_userId_key" ON "BoardUser"("boardId", "userId");
@@ -346,7 +441,28 @@ CREATE INDEX "BoardInvitation_email_idx" ON "BoardInvitation"("email");
 CREATE INDEX "BoardInvitation_token_idx" ON "BoardInvitation"("token");
 
 -- CreateIndex
+CREATE INDEX "Project_teamId_idx" ON "Project"("teamId");
+
+-- CreateIndex
+CREATE INDEX "Project_leadId_idx" ON "Project"("leadId");
+
+-- CreateIndex
+CREATE INDEX "Project_creatorId_idx" ON "Project"("creatorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Project_slug_teamId_key" ON "Project"("slug", "teamId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProjectMember_projectId_userId_key" ON "ProjectMember"("projectId", "userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Card_slug_key" ON "Card"("slug");
+
+-- CreateIndex
 CREATE INDEX "Card_sprintId_idx" ON "Card"("sprintId");
+
+-- CreateIndex
+CREATE INDEX "Card_projectId_idx" ON "Card"("projectId");
 
 -- CreateIndex
 CREATE INDEX "Sprint_teamId_idx" ON "Sprint"("teamId");
@@ -394,22 +510,52 @@ CREATE INDEX "UserPerformanceHistory_userId_idx" ON "UserPerformanceHistory"("us
 CREATE INDEX "UserPerformanceHistory_date_idx" ON "UserPerformanceHistory"("date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Subscription_userId_key" ON "Subscription"("userId");
+CREATE UNIQUE INDEX "subscriptions_userId_key" ON "subscriptions"("userId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Subscription_stripeSubscriptionId_key" ON "Subscription"("stripeSubscriptionId");
+CREATE UNIQUE INDEX "subscriptions_paddleSubscriptionId_key" ON "subscriptions"("paddleSubscriptionId");
 
 -- CreateIndex
-CREATE INDEX "Subscription_userId_idx" ON "Subscription"("userId");
+CREATE INDEX "subscriptions_userId_idx" ON "subscriptions"("userId");
 
 -- CreateIndex
-CREATE INDEX "Subscription_stripeSubscriptionId_idx" ON "Subscription"("stripeSubscriptionId");
+CREATE INDEX "subscriptions_paddleSubscriptionId_idx" ON "subscriptions"("paddleSubscriptionId");
 
 -- CreateIndex
 CREATE INDEX "ImageUpload_userId_idx" ON "ImageUpload"("userId");
 
 -- CreateIndex
 CREATE INDEX "ImageUpload_createdAt_idx" ON "ImageUpload"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "NoteCategory_userId_idx" ON "NoteCategory"("userId");
+
+-- CreateIndex
+CREATE INDEX "NoteCategory_slug_idx" ON "NoteCategory"("slug");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "NoteCategory_userId_slug_key" ON "NoteCategory"("userId", "slug");
+
+-- CreateIndex
+CREATE INDEX "Note_categoryId_idx" ON "Note"("categoryId");
+
+-- CreateIndex
+CREATE INDEX "Note_userId_idx" ON "Note"("userId");
+
+-- CreateIndex
+CREATE INDEX "Note_createdAt_idx" ON "Note"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "Note_isPublic_idx" ON "Note"("isPublic");
+
+-- CreateIndex
+CREATE INDEX "ProjectBoard_projectId_idx" ON "ProjectBoard"("projectId");
+
+-- CreateIndex
+CREATE INDEX "ProjectBoard_boardId_idx" ON "ProjectBoard"("boardId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProjectBoard_projectId_boardId_key" ON "ProjectBoard"("projectId", "boardId");
 
 -- CreateIndex
 CREATE INDEX "_assignee_B_index" ON "_assignee"("B");
@@ -442,7 +588,25 @@ ALTER TABLE "BoardInvitation" ADD CONSTRAINT "BoardInvitation_invitedBy_fkey" FO
 ALTER TABLE "Column" ADD CONSTRAINT "Column_boardId_fkey" FOREIGN KEY ("boardId") REFERENCES "Board"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Project" ADD CONSTRAINT "Project_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Project" ADD CONSTRAINT "Project_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Project" ADD CONSTRAINT "Project_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Card" ADD CONSTRAINT "Card_columnId_fkey" FOREIGN KEY ("columnId") REFERENCES "Column"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Card" ADD CONSTRAINT "Card_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Card" ADD CONSTRAINT "Card_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -499,10 +663,25 @@ ALTER TABLE "TeamPerformanceSnapshot" ADD CONSTRAINT "TeamPerformanceSnapshot_sp
 ALTER TABLE "UserPerformanceHistory" ADD CONSTRAINT "UserPerformanceHistory_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ImageUpload" ADD CONSTRAINT "ImageUpload_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "NoteCategory" ADD CONSTRAINT "NoteCategory_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Note" ADD CONSTRAINT "Note_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "NoteCategory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Note" ADD CONSTRAINT "Note_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProjectBoard" ADD CONSTRAINT "ProjectBoard_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProjectBoard" ADD CONSTRAINT "ProjectBoard_boardId_fkey" FOREIGN KEY ("boardId") REFERENCES "Board"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "_assignee" ADD CONSTRAINT "_assignee_A_fkey" FOREIGN KEY ("A") REFERENCES "Card"("id") ON DELETE CASCADE ON UPDATE CASCADE;

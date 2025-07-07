@@ -1,5 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../db'); // Use singleton instance
+
+// Simple in-memory cache for user plans (5 minute TTL)
+const userPlanCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 // Feature limits for each plan
 const PLAN_LIMITS = {
@@ -44,17 +47,36 @@ const PLAN_LIMITS = {
   }
 };
 
-// Get user's current plan
+// Get user's current plan with caching
 const getUserPlan = async (userId) => {
+  // Check cache first
+  const cacheKey = `user_plan_${userId}`;
+  const cached = userPlanCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.plan;
+  }
+
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        subscription: true
+      select: {
+        subscription: {
+          select: {
+            plan: true,
+            status: true,
+            currentPeriodEnd: true
+          }
+        }
       }
     });
 
     if (!user || !user.subscription) {
+      // Cache the result
+      userPlanCache.set(cacheKey, {
+        plan: 'free',
+        timestamp: Date.now()
+      });
       return 'free';
     }
 
@@ -63,6 +85,11 @@ const getUserPlan = async (userId) => {
     const periodEnd = new Date(user.subscription.currentPeriodEnd);
     
     if (user.subscription.status !== 'active' || now > periodEnd) {
+      // Cache the result
+      userPlanCache.set(cacheKey, {
+        plan: 'free',
+        timestamp: Date.now()
+      });
       return 'free';
     }
 
@@ -74,12 +101,36 @@ const getUserPlan = async (userId) => {
       'TEAM': 'team'
     };
 
-    return planMapping[user.subscription.plan] || 'free';
+    const plan = planMapping[user.subscription.plan] || 'free';
+    
+    // Cache the result
+    userPlanCache.set(cacheKey, {
+      plan,
+      timestamp: Date.now()
+    });
+    
+    return plan;
   } catch (error) {
     console.error('Error getting user plan:', error);
     return 'free'; // Default to free on error
   }
 };
+
+// Clear cache for a specific user (call this when subscription changes)
+const clearUserPlanCache = (userId) => {
+  const cacheKey = `user_plan_${userId}`;
+  userPlanCache.delete(cacheKey);
+};
+
+// Clean up expired cache entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of userPlanCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      userPlanCache.delete(key);
+    }
+  }
+}, 10 * 60 * 1000); // 10 minutes
 
 // Check if feature is available for plan
 const hasFeatureAccess = (plan, feature) => {
@@ -121,7 +172,7 @@ const isWithinLimits = async (userId, plan, limitType) => {
   try {
     switch (limitType) {
       case 'projects':
-        const projectCount = await prisma.board.count({
+        const projectCount = await prisma.workspace.count({
           where: { userId }
         });
         currentUsage = projectCount;
@@ -245,7 +296,7 @@ const getUsageStats = async (userId) => {
     
     // Get current usage
     const [projectCount, user, taskCount] = await Promise.all([
-      prisma.board.count({ where: { userId } }),
+      prisma.workspace.count({ where: { userId } }),
       prisma.user.findUnique({
         where: { id: userId },
         include: {
@@ -260,7 +311,7 @@ const getUsageStats = async (userId) => {
       prisma.card.count({
         where: {
           column: {
-            board: {
+            workspace: {
               userId: userId
             }
           }
@@ -277,7 +328,7 @@ const getUsageStats = async (userId) => {
     let maxTasksPerProject = 0;
     if (projectCount > 0) {
       try {
-        const projectTaskCounts = await prisma.board.findMany({
+        const projectTaskCounts = await prisma.workspace.findMany({
           where: { userId },
           include: {
             columns: {
@@ -345,5 +396,6 @@ module.exports = {
   requireWithinLimits,
   getUsageStats,
   getStorageUsage,
+  clearUserPlanCache,
   PLAN_LIMITS
 }; 
