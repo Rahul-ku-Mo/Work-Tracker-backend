@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const userRouter = require("./userRoutes");
-const boardRouter = require("./boardRoutes");
+const workspaceRouter = require("./workspaceRoutes");
 const authRouter = require("./authRoutes");
 const commentRouter = require("./commentRoutes");
 const columnRouter = require("./columnRoutes");
@@ -19,6 +19,7 @@ const timeEntryRouter = require("./timeEntry.routes");
 const billingRouter = require("./billing.routes");
 const notesRouter = require("./notes.routes");
 const feedbackRouter = require("./feedback.routes");
+const projectRouter = require("./project.routes");
 
 // Auth routes
 router.use("/", authRouter);
@@ -42,7 +43,7 @@ router.use(userController.checkUserExists);
 router.get("/auth/onboarding", onboardingController.checkOnboarding);
 
 router.use("/users", userRouter);
-router.use("/boards", boardRouter);
+router.use("/workspaces", workspaceRouter);
 router.use("/columns", columnRouter);
 router.use("/cards", cardRouter);
 router.use("/comments", commentRouter);
@@ -52,5 +53,6 @@ router.use("/ai", aiRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/time-entries", timeEntryRouter);
 router.use("/notes", notesRouter);
+router.use("/projects", projectRouter);
 
 module.exports = router;

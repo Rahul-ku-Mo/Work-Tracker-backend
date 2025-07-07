@@ -1,11 +1,11 @@
 const { prisma } = require("../db");
 
 exports.getColumns = async (req, res) => {
-  const { boardId } = req.query; // Assuming we're passing the boardId as a query parameter
+  const { workspaceId } = req.query; // Assuming we're passing the workspaceId as a query parameter
 
   try {
     const columns = await prisma.column.findMany({
-      where: { boardId: parseInt(boardId) },
+      where: { workspaceId: parseInt(workspaceId) },
       include: {
         cards: {
           include: {
@@ -27,23 +27,23 @@ exports.getColumns = async (req, res) => {
 };
 
 exports.createColumn = async (req, res) => {
-  const { boardId } = req.query;
+  const { workspaceId } = req.query;
   try {
-    const board = await prisma.board.findUnique({
-      where: { id: parseInt(boardId) },
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: parseInt(workspaceId) },
     });
 
-    if (!board) {
+    if (!workspace) {
       return res.status(404).json({
         status: 404,
-        message: "Board not found",
+        message: "Workspace not found",
       });
     }
 
     const { title } = req.body;
 
     const lastColumn = await prisma.column.findFirst({
-      where: { boardId: parseInt(boardId) },
+      where: { workspaceId: parseInt(workspaceId) },
       orderBy: { order: "desc" },
       select: { order: true },
     });
@@ -56,8 +56,8 @@ exports.createColumn = async (req, res) => {
       data: {
         title,
         order: newOrder,
-        board: {
-          connect: { id: parseInt(boardId) },
+        workspace: {
+          connect: { id: parseInt(workspaceId) },
         },
       },
     });

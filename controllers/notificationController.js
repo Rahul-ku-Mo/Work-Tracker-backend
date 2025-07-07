@@ -106,7 +106,7 @@ exports.createCardNotification = async (senderId, receiverId, notificationType, 
     const metadata = {
       cardId: cardData.id,
       cardTitle: cardData.title,
-      boardId: cardData.boardId || additionalData.boardId,
+      workspaceId: cardData.workspaceId || additionalData.workspaceId,
       ...additionalData,
     };
 
@@ -159,7 +159,7 @@ exports.notifyCardAssignment = async (cardId, assigneeId, assignerId) => {
       include: {
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -172,7 +172,7 @@ exports.notifyCardAssignment = async (cardId, assigneeId, assignerId) => {
       assigneeId,
       "CARD_ASSIGNED",
       card,
-      { boardId: card.column.board.id, boardTitle: card.column.board.title }
+      { workspaceId: card.column.workspace.id, workspaceTitle: card.column.workspace.title }
     );
   } catch (error) {
     console.error("Failed to send card assignment notification:", error);
@@ -188,7 +188,7 @@ exports.notifyCardUpdate = async (cardId, updaterId, previousData, newData) => {
         assignees: true,
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -214,8 +214,8 @@ exports.notifyCardUpdate = async (cardId, updaterId, previousData, newData) => {
         "CARD_UPDATED",
         card,
         {
-          boardId: card.column.board.id,
-          boardTitle: card.column.board.title,
+          workspaceId: card.column.workspace.id,
+          workspaceTitle: card.column.workspace.title,
           changes: changes.join(", "),
         }
       );
@@ -234,7 +234,7 @@ exports.notifyCardCompletion = async (cardId, completerId) => {
         assignees: true,
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -254,8 +254,8 @@ exports.notifyCardCompletion = async (cardId, completerId) => {
         "CARD_COMPLETED",
         card,
         {
-          boardId: card.column.board.id,
-          boardTitle: card.column.board.title,
+          workspaceId: card.column.workspace.id,
+          workspaceTitle: card.column.workspace.title,
         }
       );
     }
@@ -273,7 +273,7 @@ exports.notifyCardComment = async (cardId, commenterId, commentContent) => {
         assignees: true,
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -293,8 +293,8 @@ exports.notifyCardComment = async (cardId, commenterId, commentContent) => {
         "CARD_COMMENTED",
         card,
         {
-          boardId: card.column.board.id,
-          boardTitle: card.column.board.title,
+          workspaceId: card.column.workspace.id,
+          workspaceTitle: card.column.workspace.title,
           commentPreview: commentContent.substring(0, 100),
         }
       );
@@ -325,7 +325,7 @@ exports.checkDueCardsAndNotify = async () => {
         assignees: true,
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -343,7 +343,7 @@ exports.checkDueCardsAndNotify = async () => {
         assignees: true,
         column: {
           include: {
-            board: true,
+            workspace: true,
           },
         },
       },
@@ -358,8 +358,8 @@ exports.checkDueCardsAndNotify = async () => {
           "CARD_DUE_SOON",
           card,
           {
-            boardId: card.column.board.id,
-            boardTitle: card.column.board.title,
+            workspaceId: card.column.workspace.id,
+            workspaceTitle: card.column.workspace.title,
             dueDate: card.dueDate,
           }
         );
@@ -375,8 +375,8 @@ exports.checkDueCardsAndNotify = async () => {
           "CARD_OVERDUE",
           card,
           {
-            boardId: card.column.board.id,
-            boardTitle: card.column.board.title,
+            workspaceId: card.column.workspace.id,
+            workspaceTitle: card.column.workspace.title,
             dueDate: card.dueDate,
             daysPastDue: Math.floor((now - new Date(card.dueDate)) / (1000 * 60 * 60 * 24)),
           }
@@ -390,13 +390,13 @@ exports.checkDueCardsAndNotify = async () => {
 
 exports.createInviteNotification = async (req, res) => {
   const { userId: senderId } = req.user;
-  const { receiverId, boardId } = req.body;
+  const { receiverId, workspaceId } = req.body;
 
   try {
-    // Check if sender has admin access to the board
-    const senderAccess = await prisma.boardUser.findFirst({
+    // Check if sender has admin access to the workspace
+    const senderAccess = await prisma.workspaceUser.findFirst({
       where: {
-        boardId: parseInt(boardId),
+        workspaceId: parseInt(workspaceId),
         userId: senderId,
         role: "ADMIN",
       },
@@ -405,13 +405,13 @@ exports.createInviteNotification = async (req, res) => {
     if (!senderAccess) {
       return res.status(403).json({
         status: "error",
-        message: "Only board admins can send invites",
+        message: "Only workspace admins can send invites",
       });
     }
 
-    // Get board details for the notification message
-    const board = await prisma.board.findUnique({
-      where: { id: parseInt(boardId) },
+    // Get workspace details for the notification message
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: parseInt(workspaceId) },
       select: { title: true },
     });
 
@@ -424,7 +424,7 @@ exports.createInviteNotification = async (req, res) => {
         receiver: {
           connect: { id: receiverId },
         },
-        metadata: JSON.stringify({ boardId, boardTitle: board.title }),
+        metadata: JSON.stringify({ workspaceId, workspaceTitle: workspace.title }),
       },
       select: {
         id: true,
