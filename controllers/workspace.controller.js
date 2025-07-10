@@ -1,4 +1,5 @@
 const { prisma } = require("../db");
+const { generateCapitalizedSlug, generateUniqueWorkspaceSlug } = require('../utils/slugUtils');
 
 exports.getWorkspaces = async (req, res) => {
   const { userId } = req.user;
@@ -81,16 +82,37 @@ exports.getWorkspaces = async (req, res) => {
 };
 
 exports.getWorkspace = async (req, res) => {
-  const { workspaceId } = req.params;
-  if (!workspaceId) {
+  const { workspaceId, teamId, slug } = req.params;
+  
+  // Support both old ID-based lookup and new teamId + slug lookup
+  if (!workspaceId && (!teamId || !slug)) {
     return res.status(400).json({
       status: 400,
-      message: "workspaceId is required",
+      message: "Either workspaceId or both teamId and slug are required",
     });
   }
+  
   try {
-    const workspace = await prisma.workspace.findUnique({
-      where: { id: parseInt(workspaceId) },
+    let whereClause;
+    
+    if (workspaceId) {
+      // Legacy lookup by ID or slug
+      const isNumeric = /^\d+$/.test(workspaceId);
+      whereClause = isNumeric 
+        ? { id: parseInt(workspaceId) }
+        : { slug: workspaceId };
+    } else {
+      // New lookup by teamId + slug
+      whereClause = { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      };
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: whereClause,
       include: {
         columns: {
           include: {
@@ -119,14 +141,26 @@ exports.getWorkspace = async (req, res) => {
             },
           },
         },
+        user: {
+          select: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+              }
+            }
+          }
+        }
       },
     });
+    
     if (!workspace) {
       return res.status(404).json({
         status: "error",
         message: "Workspace not found",
       });
     }
+    
     res.status(200).json({
       status: "success",
       data: workspace,
@@ -144,10 +178,10 @@ exports.createWorkspace = async (req, res) => {
   try {
     const { title, colorId, colorValue, colorName } = req.body;
     const { userId } = req.user;
-
+    
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true },
+      select: { role: true, teamId: true },
     });
 
     // Check if user is an admin
@@ -172,17 +206,32 @@ exports.createWorkspace = async (req, res) => {
       });
     }
 
+    // Generate unique slug for the workspace within the team
+    const slug = await generateUniqueWorkspaceSlug(title, async (slug) => {
+      const existing = await prisma.workspace.findFirst({
+        where: { 
+          slug,
+          user: {
+            teamId: team.id
+          }
+        }
+      });
+      return !!existing;
+    });
+
     const workspace = await prisma.workspace.create({
       data: {
         title,
+        slug,
         colorId,
         colorValue,
         colorName,
         userId,
+        slug,
         members: {
           create: {
             userId: userId,
-            role: "ADMIN",
+            role: "ADMIN",  
           },
         },
       },
@@ -203,32 +252,145 @@ exports.createWorkspace = async (req, res) => {
 };
 
 exports.deleteWorkspace = async (req, res) => {
-  const { workspaceId } = req.params;
+  const { workspaceId, teamId, slug } = req.params;
+  const { userId } = req.user;
+
+  // Support both old ID-based lookup and new teamId + slug lookup
+  if (!workspaceId && (!teamId || !slug)) {
+    return res.status(400).json({
+      status: 400,
+      message: "Either workspaceId or both teamId and slug are required",
+    });
+  }
+
   try {
-    await prisma.workspace.delete({ where: { id: parseInt(workspaceId) } });
+    let whereClause;
+    
+    if (workspaceId) {
+      // Legacy lookup by ID or slug
+      const isNumeric = /^\d+$/.test(workspaceId);
+      whereClause = isNumeric 
+        ? { id: parseInt(workspaceId) }
+        : { slug: workspaceId };
+    } else {
+      // New lookup by teamId + slug
+      whereClause = { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      };
+    }
+
+    // Check if workspace exists and user is the owner
+    const workspace = await prisma.workspace.findFirst({
+      where: whereClause,
+      include: {
+        members: {
+          where: { userId: userId },
+          select: { role: true }
+        }
+      }
+    });
+
+    if (!workspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found",
+      });
+    }
+
+    // Check if user is admin
+    const userMember = workspace.members.find(member => true);
+    if (!userMember || userMember.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 403,
+        message: "Only workspace admins can delete the workspace",
+      });
+    }
+
+    await prisma.workspace.delete({
+      where: { id: workspace.id },
+    });
+
     res.status(204).json({
       status: 204,
-      message: "Success",
+      message: "Workspace deleted successfully",
     });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
 };
 
 exports.updateWorkspace = async (req, res) => {
-  const { workspaceId } = req.params;
+  const { workspaceId, teamId, slug } = req.params;
   const { title, colorId, colorValue, colorName } = req.body;
 
+  // Support both old ID-based lookup and new teamId + slug lookup
+  if (!workspaceId && (!teamId || !slug)) {
+    return res.status(400).json({
+      status: 400,
+      message: "Either workspaceId or both teamId and slug are required",
+    });
+  }
+
   try {
+    let whereClause;
+    
+    if (workspaceId) {
+      // Legacy lookup by ID or slug
+      const isNumeric = /^\d+$/.test(workspaceId);
+      whereClause = isNumeric 
+        ? { id: parseInt(workspaceId) }
+        : { slug: workspaceId };
+    } else {
+      // New lookup by teamId + slug
+      whereClause = { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      };
+    }
+
+    // First find the workspace to get its ID
+    const existingWorkspace = await prisma.workspace.findFirst({
+      where: whereClause,
+      select: { id: true, title: true, user: { select: { teamId: true } } }
+    });
+
+    if (!existingWorkspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found",
+      });
+    }
+
+    // If title is being updated, generate a new slug
+    let updateData = { colorId, colorValue, colorName };
+    
+    if (title && title !== existingWorkspace.title) {
+      const newSlug = await generateUniqueWorkspaceSlug(title, async (slug) => {
+        const existing = await prisma.workspace.findFirst({
+          where: { 
+            slug,
+            user: {
+              teamId: existingWorkspace.user.teamId
+            },
+            id: { not: existingWorkspace.id } // Exclude current workspace
+          }
+        });
+        return !!existing;
+      });
+      
+      updateData.title = title;
+      updateData.slug = newSlug;
+    }
+
     const workspace = await prisma.workspace.update({
-      where: { id: parseInt(workspaceId) },
-      data: {
-        title,
-        colorId,
-        colorValue,
-        colorName,
-      },
+      where: { id: existingWorkspace.id },
+      data: updateData,
     });
 
     res.status(200).json({
@@ -293,14 +455,55 @@ exports.getFavoriteWorkspaces = async (req, res) => {
 
 // Toggle favorite status for a workspace
 exports.toggleWorkspaceFavorite = async (req, res) => {
-  const { workspaceId } = req.params;
+  const { workspaceId, teamId, slug } = req.params;
   const { userId } = req.user;
 
+  // Support both old ID-based lookup and new teamId + slug lookup
+  if (!workspaceId && (!teamId || !slug)) {
+    return res.status(400).json({
+      status: 400,
+      message: "Either workspaceId or both teamId and slug are required",
+    });
+  }
+
   try {
+    let workspace;
+    
+    if (workspaceId) {
+      // Legacy lookup by ID
+      const isNumeric = /^\d+$/.test(workspaceId);
+      const whereClause = isNumeric 
+        ? { id: parseInt(workspaceId) }
+        : { slug: workspaceId };
+      
+      workspace = await prisma.workspace.findFirst({
+        where: whereClause,
+        select: { id: true, title: true, colorValue: true, colorName: true }
+      });
+    } else {
+      // New lookup by teamId + slug
+      workspace = await prisma.workspace.findFirst({
+        where: { 
+          slug: slug,
+          user: {
+            teamId: teamId
+          }
+        },
+        select: { id: true, title: true, colorValue: true, colorName: true }
+      });
+    }
+
+    if (!workspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found",
+      });
+    }
+
     // Check if user has access to the workspace
     const workspaceUser = await prisma.workspaceUser.findFirst({
       where: {
-        workspaceId: parseInt(workspaceId),
+        workspaceId: workspace.id,
         userId: userId,
       },
     });
@@ -336,7 +539,7 @@ exports.toggleWorkspaceFavorite = async (req, res) => {
       status: 200,
       message: updatedWorkspaceUser.isFavorite ? "Workspace added to favorites" : "Workspace removed from favorites",
       data: {
-        workspaceId: parseInt(workspaceId),
+        workspaceId: workspace.id,
         isFavorite: updatedWorkspaceUser.isFavorite,
         workspace: updatedWorkspaceUser.workspace
       },

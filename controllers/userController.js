@@ -97,6 +97,7 @@ exports.getUser = async (req, res) => {
         company: true,
         role: true,
         isPaidUser: true,
+        teamId: true,
         updatedAt: true,
         workspaces: {
           include: {

@@ -503,11 +503,334 @@ const reorderProjects = async (req, res) => {
   }
 };
 
+// Update project target date
+const updateProjectTargetDate = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+    const { targetDate } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      select: { id: true, teamId: true }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: project.id },
+      data: {
+        targetDate: targetDate ? new Date(targetDate) : null
+      },
+      include: {
+        cards: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
+          }
+        },
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        workspaces: {
+          include: {
+            workspace: true
+          }
+        }
+      }
+    });
+
+    res.json(updatedProject);
+  } catch (error) {
+    console.error('Error updating project target date:', error);
+    res.status(500).json({ error: 'Failed to update project target date' });
+  }
+};
+
+// Update project lead
+const updateProjectLead = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+    const { leadId } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      select: { id: true, teamId: true }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Verify the lead is a member of the team
+    if (leadId) {
+      const teamMember = await prisma.team.findFirst({
+        where: {
+          id: project.teamId,
+          OR: [
+            { captainId: leadId },
+            { members: { some: { id: leadId } } }
+          ]
+        }
+      });
+
+      if (!teamMember) {
+        return res.status(400).json({ error: 'Lead must be a member of the project team' });
+      }
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: project.id },
+      data: {
+        leadId: leadId || null
+      },
+      include: {
+        cards: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
+          }
+        },
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        workspaces: {
+          include: {
+            workspace: true
+          }
+        }
+      }
+    });
+
+    res.json(updatedProject);
+  } catch (error) {
+    console.error('Error updating project lead:', error);
+    res.status(500).json({ error: 'Failed to update project lead' });
+  }
+};
+
+// Update project members
+const updateProjectMembers = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+    const { memberIds } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      select: { id: true, teamId: true, leadId: true }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Verify all members are part of the team
+    if (memberIds && Array.isArray(memberIds) && memberIds.length > 0) {
+      const teamMembers = await prisma.team.findFirst({
+        where: {
+          id: project.teamId,
+          OR: [
+            { captainId: { in: memberIds } },
+            { members: { some: { id: { in: memberIds } } } }
+          ]
+        },
+        include: {
+          members: {
+            where: {
+              id: { in: memberIds }
+            }
+          }
+        }
+      });
+
+      if (!teamMembers) {
+        return res.status(400).json({ error: 'All members must be part of the project team' });
+      }
+    }
+
+    const updatedProject = await prisma.$transaction(async (prisma) => {
+      // Remove existing members
+      await prisma.projectMember.deleteMany({
+        where: { projectId: project.id }
+      });
+
+      // Add new members
+      if (memberIds && Array.isArray(memberIds) && memberIds.length > 0) {
+        await prisma.projectMember.createMany({
+          data: memberIds.map(memberId => ({
+            projectId: project.id,
+            userId: memberId,
+            role: memberId === project.leadId ? 'LEAD' : 'MEMBER'
+          }))
+        });
+      }
+
+      return await prisma.project.findUnique({
+        where: { id: project.id },
+        include: {
+          cards: true,
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true
+                }
+              }
+            }
+          },
+          lead: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              imageUrl: true
+            }
+          },
+          creator: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              imageUrl: true
+            }
+          },
+          workspaces: {
+            include: {
+              workspace: true
+            }
+          }
+        }
+      });
+    });
+
+    res.json(updatedProject);
+  } catch (error) {
+    console.error('Error updating project members:', error);
+    res.status(500).json({ error: 'Failed to update project members' });
+  }
+};
+
+// Get project workspaces
+const getProjectWorkspaces = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      include: {
+        workspaces: {
+          include: {
+            workspace: {
+              select: {
+                id: true,
+                title: true,
+                colorName: true,
+                colorValue: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const workspaces = project.workspaces.map(pw => pw.workspace);
+
+    res.json({
+      projectId: project.id,
+      projectTitle: project.title,
+      workspaces: workspaces
+    });
+  } catch (error) {
+    console.error('Error fetching project workspaces:', error);
+    res.status(500).json({ error: 'Failed to fetch project workspaces' });
+  }
+};
+
+// Update project priority
+const updateProjectPriority = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+    const { priority } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      select: { id: true, teamId: true }
+    });
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: project.id },
+      data: { priority }
+    });
+
+    res.json(updatedProject);
+  } catch (error) {
+    console.error('Error updating project priority:', error);
+    res.status(500).json({ error: 'Failed to update project priority' });
+  }
+};
+
 module.exports = {
   getProjects,
   getProject,
   createProject,
   updateProject,
   deleteProject,
-  reorderProjects
+  reorderProjects,
+  updateProjectTargetDate,
+  updateProjectLead,
+  updateProjectMembers,
+  getProjectWorkspaces,
+  updateProjectPriority
 }; 

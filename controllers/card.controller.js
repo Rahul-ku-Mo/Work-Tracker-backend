@@ -4,12 +4,49 @@ const { generateCapitalizedSlug, generateUniqueSlug } = require('../utils/slugUt
 const createCard = async (req, res) => {
   const { columnId } = req.query;
 
+  // Add validation for columnId
+  if (!columnId) {
+    return res.status(400).json({
+      status: 400,
+      message: "columnId query parameter is required",
+    });
+  }
+
   try {
+    const parsedColumnId = parseInt(columnId);
+    
+    if (isNaN(parsedColumnId)) {
+      return res.status(400).json({
+        status: 400,
+        message: "columnId must be a valid number",
+      });
+    }
+
+    // Verify that the column exists
+    const column = await prisma.column.findUnique({
+      where: { id: parsedColumnId },
+    });
+
+    if (!column) {
+      return res.status(404).json({
+        status: 404,
+        message: "Column not found",
+      });
+    }
+
     const { title, description, labels, attachments, dueDate, assigneeIds, priority, storyPoints, projectId } =
       req.body;
 
+    // Validate required fields
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        status: 400,
+        message: "Card title is required",
+      });
+    }
+
     const lastCard = await prisma.card.findFirst({
-      where: { columnId: parseInt(columnId) },
+      where: { columnId: parsedColumnId },
       orderBy: { order: "desc" },
       select: { order: true },
     });
@@ -44,7 +81,7 @@ const createCard = async (req, res) => {
         } : undefined,
         column: {
           connect: {
-            id: parseInt(columnId),
+            id: parsedColumnId,
           },
         },
         assignees: assigneeIds
@@ -67,7 +104,10 @@ const createCard = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ 
+      status: 500,
+      message: err.message || "Failed to create card" 
+    });
   }
 };
 
