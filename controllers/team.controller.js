@@ -607,6 +607,7 @@ exports.getTeamWorkspaces = async (req, res) => {
       select: {
         id: true,
         title: true,
+        slug: true,
         colorName: true,
         colorValue: true,
         userId: true,
@@ -623,7 +624,8 @@ exports.getTeamWorkspaces = async (req, res) => {
         user: {
           select: {
             name: true,
-            email: true
+            email: true,
+            teamId: true
           }
         }
       },
@@ -638,7 +640,8 @@ exports.getTeamWorkspaces = async (req, res) => {
       hasAccess: workspace.members.length > 0,
       userRole: workspace.members[0]?.role || null,
       isOwner: workspace.userId === userId,
-      createdBy: workspace.user.name || workspace.user.email
+      createdBy: workspace.user.name || workspace.user.email,
+      teamId: workspace.user.teamId
     }));
 
     return res.status(200).json({

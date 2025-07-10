@@ -3,12 +3,17 @@ const emailService = require("../services/emailService");
 
 // Get workspace members
 exports.getWorkspaceMembers = async (req, res) => {
-  const { workspaceId } = req.params;
+  const { workspaceSlug, teamId } = req.params;
 
   try {
     const members = await prisma.workspaceUser.findMany({
       where: {
-        workspaceId: parseInt(workspaceId),
+        workspace: {
+          slug: workspaceSlug,
+          user: {
+            teamId: teamId
+          }
+        }
       },
       include: {
         user: {
@@ -35,7 +40,7 @@ exports.getWorkspaceMembers = async (req, res) => {
 
 // Invite user to workspace
 exports.inviteUserToWorkspace = async (req, res) => {
-  const { workspaceId } = req.params;
+  const { workspaceId }   = req.params;
   const { email, role = "MEMBER" } = req.body;
   const { userId } = req.user;
 
@@ -99,11 +104,14 @@ exports.inviteUserToWorkspace = async (req, res) => {
 
       const inviter = await prisma.user.findUnique({
         where: { id: userId },
-        select: { name: true, email: true }
+        select: { name: true, email: true, team: true }
       });
 
+      const teamName = inviter.team.name;
+      const workspaceSlug = workspace.slug;
+
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const workspaceUrl = `${frontendUrl}/workspace/${workspaceId}`;
+      const workspaceUrl = `${frontendUrl}/workspace/${teamName}/${workspaceSlug}`;
       
       await emailService.sendWorkspaceInvitation(
         user.email,
