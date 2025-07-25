@@ -41,21 +41,25 @@ function generateCapitalizedSlug(title) {
     .trim()
     .replace(/[^\w\s-]/g, '') // Remove special characters
     .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('-');
 }
 
 /**
- * Generate a 3-letter capitalized slug for workspace (e.g., "Solutions" -> "SOL", "Development" -> "DEV")
+ * Generate a capitalized slug for workspace (e.g., "My Project" -> "My-Project")
  * @param {string} title - The title to convert to slug
- * @returns {string} - The generated 3-letter capitalized slug
+ * @returns {string} - The generated capitalized slug
  */
 function generateWorkspaceSlug(title) {
   return title
     .trim()
     .replace(/[^\w\s]/g, '') // Remove special characters except spaces
-    .replace(/\s+/g, '') // Remove all spaces
-    .substring(0, 3) // Take first 3 characters
-    .toUpperCase(); // Convert to uppercase
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('-');
 }
 
 /**
@@ -70,7 +74,7 @@ async function generateUniqueWorkspaceSlug(title, checkExisting) {
   let counter = 1;
 
   while (await checkExisting(slug)) {
-    slug = `${baseSlug}${counter}`;
+    slug = `${baseSlug}-${counter}`;
     counter++;
   }
 
