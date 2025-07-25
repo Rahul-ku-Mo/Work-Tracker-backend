@@ -1,5 +1,6 @@
 const { prisma } = require("../db");
 const emailService = require("../services/emailService");
+const { generateCapitalizedSlug } = require("../utils/slugUtils");
 
 // Get workspace members
 exports.getWorkspaceMembers = async (req, res) => {
@@ -40,7 +41,7 @@ exports.getWorkspaceMembers = async (req, res) => {
 
 // Invite user to workspace
 exports.inviteUserToWorkspace = async (req, res) => {
-  const { workspaceId }   = req.params;
+  const { workspaceSlug, teamId }   = req.params;
   const { email, role = "MEMBER" } = req.body;
   const { userId } = req.user;
 
@@ -60,8 +61,12 @@ exports.inviteUserToWorkspace = async (req, res) => {
     // Check if user is already a member
     const existingMember = await prisma.workspaceUser.findFirst({
       where: {
-        workspaceId: parseInt(workspaceId),
-        userId: user.id,
+        workspace: {
+          slug : workspaceSlug,
+          user: {
+            teamId: teamId
+          }
+        },
       },
     });
 
@@ -75,8 +80,14 @@ exports.inviteUserToWorkspace = async (req, res) => {
     // Add user to workspace
     const workspaceMember = await prisma.workspaceUser.create({
       data: {
-        workspaceId: parseInt(workspaceId),
-        userId: user.id,
+        workspace: {
+          connect: {
+            slug: workspaceSlug,
+            user: {
+              teamId: teamId
+            } 
+          }
+        },
         role,
       },
       include: {
@@ -94,7 +105,7 @@ exports.inviteUserToWorkspace = async (req, res) => {
     // Send email notification
     try {
       const workspace = await prisma.workspace.findUnique({
-        where: { id: parseInt(workspaceId) },
+        where: { slug: workspaceSlug, user: { teamId: teamId } },
         include: {
           user: {
             select: { name: true, email: true }
@@ -108,10 +119,11 @@ exports.inviteUserToWorkspace = async (req, res) => {
       });
 
       const teamName = inviter.team.name;
+      const teamSlug = generateCapitalizedSlug(teamName);
       const workspaceSlug = workspace.slug;
 
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const workspaceUrl = `${frontendUrl}/workspace/${teamName}/${workspaceSlug}`;
+      const workspaceUrl = `${frontendUrl}/workspace/${teamSlug}/${workspaceSlug}`;
       
       await emailService.sendWorkspaceInvitation(
         user.email,
