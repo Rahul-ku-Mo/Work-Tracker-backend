@@ -472,7 +472,6 @@ exports.joinTeam = async (req, res) => {
   }
 };
 
-
 exports.getTeamMembers = async (req, res) => {
   try {
     const { userId } = req.user;

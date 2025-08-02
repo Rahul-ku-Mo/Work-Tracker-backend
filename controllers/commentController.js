@@ -40,7 +40,7 @@ exports.createComment = async (req, res) => {
     });
 
     // Send comment notification
-    const notificationController = require("./notificationController");
+    const notificationController = require("./notification.controller");
     await notificationController.notifyCardComment(
       parseInt(cardId),
       userId,

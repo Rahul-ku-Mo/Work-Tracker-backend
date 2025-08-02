@@ -1,5 +1,9 @@
-const { prisma } = require("../db");
-const { generateCapitalizedSlug, generateUniqueSlug } = require('../utils/slugUtils');
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+const { generateUniqueSlug } = require("../utils/slugUtils");
+const { processMentionsWithDiff, updateMentionsWithDiff } = require("../utils/enhancedMentionUtils");
+const notificationController = require("./notification.controller");
+const { pusherServer } = require("../services/pusherServer");
 
 const createCard = async (req, res) => {
   const { columnId } = req.query;
@@ -8,54 +12,35 @@ const createCard = async (req, res) => {
   if (!columnId) {
     return res.status(400).json({
       status: 400,
-      message: "columnId query parameter is required",
+      message: "Column ID is required",
     });
   }
 
+  const parsedColumnId = parseInt(columnId);
+
+  const {
+    title,
+    description,
+    labels,
+    attachments,
+    dueDate,
+    priority,
+    storyPoints,
+    order,
+    projectId,
+    assigneeIds,
+  } = req.body;
+
   try {
-    const parsedColumnId = parseInt(columnId);
-    
-    if (isNaN(parsedColumnId)) {
-      return res.status(400).json({
-        status: 400,
-        message: "columnId must be a valid number",
-      });
-    }
-
-    // Verify that the column exists
-    const column = await prisma.column.findUnique({
-      where: { id: parsedColumnId },
-    });
-
-    if (!column) {
-      return res.status(404).json({
-        status: 404,
-        message: "Column not found",
-      });
-    }
-
-    const { title, description, labels, attachments, dueDate, assigneeIds, priority, storyPoints, projectId } =
-      req.body;
-
-    // Validate required fields
-    if (!title || !title.trim()) {
-      return res.status(400).json({
-        status: 400,
-        message: "Card title is required",
-      });
-    }
-
-    const lastCard = await prisma.card.findFirst({
+    // Get the highest order in the column
+    const maxOrder = await prisma.card.aggregate({
       where: { columnId: parsedColumnId },
-      orderBy: { order: "desc" },
-      select: { order: true },
+      _max: { order: true },
     });
 
-    // If a column was found, increment its order value for the new column.
-    // If no column was found, start the ordering at 1.
-    const newOrder = lastCard ? lastCard.order + 1 : 1;
+    const newOrder = (maxOrder._max.order || 0) + 1;
 
-    // Generate unique slug for the card
+    // Generate unique slug
     const slug = await generateUniqueSlug(title, async (slug) => {
       const existing = await prisma.card.findFirst({
         where: { slug }
@@ -97,6 +82,48 @@ const createCard = async (req, res) => {
       },
     });
 
+    // Process mentions in card description and title
+    if (description || title) {
+      const contentToCheck = `${title || ''} ${description || ''}`;
+      try {
+        // Get author details for notification context
+        const author = await prisma.user.findUnique({
+          where: { id: req.user.userId },
+          select: { name: true, username: true }
+        });
+        
+        await processMentionsWithDiff(
+          'task', 
+          card.id, 
+          contentToCheck, 
+          req.user.userId,
+          author?.name || author?.username || 'Unknown User',
+          title || 'Untitled Card'
+        );
+      } catch (mentionError) {
+        console.error('Error processing mentions:', mentionError);
+        // Don't fail the card creation if mention processing fails
+      }
+    }
+
+    // Send real-time update to workspace members
+    try {
+      const workspace = await prisma.workspace.findFirst({
+        where: { columns: { some: { id: parsedColumnId } } },
+        include: { members: { include: { user: true } } }
+      });
+
+      if (workspace) {
+        await pusherServer.trigger(`workspace-${workspace.slug}`, 'card-created', {
+          cardId: card.id,
+          action: "create",
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (pusherError) {
+      console.error('Error sending Pusher notification for card creation:', pusherError);
+    }
+
     res.status(201).json({
       status: 201,
       message: "Success",
@@ -134,6 +161,17 @@ const updateCard = async (req, res) => {
       where: { id: parseInt(cardId) },
       include: {
         assignees: true,
+        column: {
+          include: {
+            workspace: {
+              include: {
+                members: {
+                  include: { user: true }
+                }
+              }
+            }
+          }
+        }
       },
     });
 
@@ -228,13 +266,21 @@ const updateCard = async (req, res) => {
           },
         },
         project: true,
+        column: {
+          include: {
+            workspace: {
+              include: {
+                members: {
+                  include: { user: true }
+                }
+              }
+            }
+          }
+        }
       },
     });
-
-    // Send notifications
-    const notificationController = require("./notificationController");
-    
-    // Send assignment notification if a new assignee was added
+  
+    // Send assignment notification if a new assignee was added #Important
     if (wasAssigned && assigneeId) {
       await notificationController.notifyCardAssignment(
         parseInt(cardId),
@@ -243,27 +289,41 @@ const updateCard = async (req, res) => {
       );
     }
 
-    // Send update notification if any significant fields changed
-    const newData = {
-      title: updateData.title,
-      description: updateData.description,
-      dueDate: updateData.dueDate,
-      priority: updateData.priority,
-    };
+ 
+    // Process mentions in updated content
+    if (description !== undefined || title !== undefined) {
+      const contentToCheck = `${title || updatedCard.title || ''} ${description || updatedCard.description || ''}`;
+      try {
+        // Get author details for notification context
+        const author = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true, username: true }
+        });
+        
+        await updateMentionsWithDiff(
+          'task', 
+          cardId, 
+          contentToCheck, 
+          userId,
+          author?.name || author?.username || 'Unknown User',
+          title || updatedCard.title || 'Untitled Card'
+        );
+      } catch (mentionError) {
+        console.error('Error processing mentions:', mentionError);
+        // Don't fail the card update if mention processing fails
+      }
+    }
 
-    const hasChanges = 
-      previousData.title !== newData.title ||
-      previousData.description !== newData.description ||
-      (previousData.dueDate?.getTime() !== newData.dueDate?.getTime()) ||
-      previousData.priority !== newData.priority;
-
-    if (hasChanges) {
-      await notificationController.notifyCardUpdate(
-        parseInt(cardId),
-        userId,
-        previousData,
-        newData
-      );
+    // Send real-time update to workspace members
+    try {
+      const workspaceId = updatedCard.column.workspace.slug;
+      await pusherServer.trigger(`workspace-${workspaceId}`, 'card-updated', {
+        cardId: updatedCard.id,
+        action: "update",
+        timestamp: new Date().toISOString()
+      });
+    } catch (pusherError) {
+      console.error('Error sending Pusher notification for card update:', pusherError);
     }
 
     res.status(200).json({
@@ -512,7 +572,6 @@ const markCardComplete = async (req, res) => {
     });
 
     // Send completion notification
-    const notificationController = require("./notificationController");
     await notificationController.notifyCardCompletion(
       parseInt(cardId),
       userId
