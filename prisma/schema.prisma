@@ -49,6 +49,7 @@ model User {
   performanceHistory       UserPerformanceHistory[] @relation("userPerformanceHistory")
   subscription             Subscription?
   assignedCards            Card[]                   @relation("assignee")
+  mentions  Mention[]
 }
 
 model Team {
@@ -136,7 +137,7 @@ model Project {
   description String?
   startDate   DateTime?
   targetDate  DateTime?
-  milestones  String[]
+  milestones  Json[]
   priority    String?
   status      String             @default("Not Started")
   teamId      String
@@ -214,16 +215,26 @@ model Comment {
 }
 
 model Notification {
-  id         Int      @id @default(autoincrement())
-  senderId   String
-  receiverId String
-  message    Message
-  metadata   String?
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  receiver   User     @relation("receiver", fields: [receiverId], references: [id])
-  sender     User     @relation("sender", fields: [senderId], references: [id])
+  id           Int      @id @default(autoincrement())
+  senderId     String
+  receiverId   String
+  message      Message
+  metadata     String?
+  isRead       Boolean  @default(false)
+  readAt       DateTime?
+  type         String?  // 'mention', 'card_assigned', etc.
+  title        String?
+  contentType  String?  // 'task', 'project', 'note'
+  contentId    String?  // ID of the content being referenced
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  receiver     User     @relation("receiver", fields: [receiverId], references: [id])
+  sender       User     @relation("sender", fields: [senderId], references: [id])
+
+  @@index([receiverId])
+  @@index([isRead])
+  @@index([type])
+  @@index([contentType, contentId])
 }
 
 model AiConversation {
@@ -417,6 +428,7 @@ model Note {
   category    NoteCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   user        User         @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
 
+
   @@index([categoryId])
   @@index([userId])
   @@index([createdAt])
@@ -435,6 +447,22 @@ model ProjectWorkspace {
   @@unique([projectId, workspaceId])
   @@index([projectId])
   @@index([workspaceId])
+}
+
+model Mention {
+  id           String   @id @default(cuid())
+  mentionedId  String   // User being mentioned
+  contentType  String   // "task", "project", "note"
+  contentId    String   // ID of task or project (as string)
+  createdAt    DateTime @default(now())
+
+  // Relations
+  mentionedUser User @relation(fields: [mentionedId], references: [id], onDelete: Cascade)
+
+  @@unique([mentionedId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([contentId])
+  @@map("mentions")
 }
 
 enum AppRole {

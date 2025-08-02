@@ -177,6 +177,23 @@ const createProject = async (req, res) => {
       milestones = [] 
     } = req.body;
 
+    // Convert milestones to proper object format if they're strings
+    const formattedMilestones = milestones.map((milestone, index) => {
+      if (typeof milestone === 'string') {
+        return {
+          id: `milestone-${Date.now()}-${index}`,
+          milestoneValue: milestone,
+          isCompletedMilestone: false
+        };
+      }
+      // If already an object, ensure it has the required structure
+      return {
+        id: milestone.id || `milestone-${Date.now()}-${index}`,
+        milestoneValue: milestone.milestoneValue || milestone.name || '',
+        isCompletedMilestone: milestone.isCompletedMilestone || false
+      };
+    });
+
     console.log('Creating project with teamId:', teamId);
     console.log('Request body:', req.body);
 
@@ -217,7 +234,7 @@ const createProject = async (req, res) => {
         targetDate: targetDate ? new Date(targetDate) : undefined,
         priority: priority || undefined,
         status: status || undefined,
-        milestones,
+        milestones: formattedMilestones,
         leadId: leadId || undefined,
         creatorId: req.user.id,
         // Create workspace associations only if workspaceIds are provided
@@ -330,6 +347,26 @@ const updateProject = async (req, res) => {
       milestones
     } = req.body;
 
+    // Format milestones if provided
+    let formattedMilestones;
+    if (milestones !== undefined) {
+      formattedMilestones = milestones.map((milestone, index) => {
+        if (typeof milestone === 'string') {
+          return {
+            id: `milestone-${Date.now()}-${index}`,
+            milestoneValue: milestone,
+            isCompletedMilestone: false
+          };
+        }
+        // If already an object, ensure it has the required structure
+        return {
+          id: milestone.id || `milestone-${Date.now()}-${index}`,
+          milestoneValue: milestone.milestoneValue || milestone.name || '',
+          isCompletedMilestone: milestone.isCompletedMilestone || false
+        };
+      });
+    }
+
     // Get the current project to get its teamId
     const currentProject = await prisma.project.findUnique({
       where: { slug: projectSlug },
@@ -365,7 +402,7 @@ const updateProject = async (req, res) => {
     if (targetDate !== undefined) updateData.targetDate = targetDate ? new Date(targetDate) : null;
     if (priority !== undefined) updateData.priority = priority;
     if (status !== undefined) updateData.status = status;
-    if (milestones !== undefined) updateData.milestones = milestones;
+    if (milestones !== undefined) updateData.milestones = formattedMilestones;
     if (leadId !== undefined) updateData.leadId = leadId;
 
     // Start a transaction for the update
@@ -821,6 +858,80 @@ const updateProjectPriority = async (req, res) => {
   }
 };
 
+// Update milestone completion status
+const updateMilestoneCompletion = async (req, res) => {
+  try {
+    const { projectSlug } = req.params;
+    const { milestoneId, isCompleted } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { slug: projectSlug },
+      select: { id: true, milestones: true }
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Update the specific milestone
+    const updatedMilestones = project.milestones.map(milestone => {
+      if (milestone.id === milestoneId) {
+        return {
+          ...milestone,
+          isCompletedMilestone: isCompleted
+        };
+      }
+      return milestone;
+    });
+
+    const updatedProject = await prisma.project.update({
+      where: { id: project.id },
+      data: { milestones: updatedMilestones },
+      include: {
+        cards: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
+          }
+        },
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        },
+        workspaces: {
+          include: {
+            workspace: true
+          }
+        }
+      }
+    });
+
+    res.json(updatedProject);
+  } catch (error) {
+    console.error('Error updating milestone completion:', error);
+    res.status(500).json({ error: 'Failed to update milestone completion' });
+  }
+};
+
 module.exports = {
   getProjects,
   getProject,
@@ -832,5 +943,6 @@ module.exports = {
   updateProjectLead,
   updateProjectMembers,
   getProjectWorkspaces,
-  updateProjectPriority
+  updateProjectPriority,
+  updateMilestoneCompletion
 }; 

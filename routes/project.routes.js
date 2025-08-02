@@ -36,4 +36,7 @@ router.post('/reorder', authenticate, projectController.reorderProjects);
 // Update project priority
 router.patch('/:projectSlug/priority', authenticate, projectController.updateProjectPriority);
 
+// Update milestone completion
+router.patch('/:projectSlug/milestone/completion', authenticate, projectController.updateMilestoneCompletion);
+
 module.exports = router; 
