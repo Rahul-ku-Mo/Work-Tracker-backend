@@ -3,13 +3,13 @@ const emailService = require("../services/emailService");
 
 // Get team members with workspace access
 exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
-  const { workspaceId } = req.params;
+  const workspaceId = req.workspaceNumericId; // Set by workspace access middleware
   const { userId } = req.user;
 
   try {
     // Get the workspace to find the team
     const workspace = await prisma.workspace.findUnique({
-      where: { id: parseInt(workspaceId) },
+      where: { id: workspaceId },
       include: {
         user: {
           include: {
@@ -39,7 +39,7 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
 
     // Get current workspace members
     const workspaceMembers = await prisma.workspaceUser.findMany({
-      where: { workspaceId: parseInt(workspaceId) },
+      where: { workspaceId: workspaceId },
       include: {
         user: {
           select: {
@@ -82,14 +82,14 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
 
 // Grant workspace access to a team member
 exports.grantWorkspaceAccess = async (req, res) => {
-  const { workspaceId } = req.params;
+  const workspaceId = req.workspaceNumericId; // Set by workspace access middleware
   const { memberId, role = "MEMBER" } = req.body;
   const { userId } = req.user;
 
   try {
     // Verify the workspace exists and user has access
     const workspace = await prisma.workspace.findUnique({
-      where: { id: parseInt(workspaceId) },
+      where: { id: workspaceId },
       include: {
         user: {
           include: {
@@ -140,7 +140,7 @@ exports.grantWorkspaceAccess = async (req, res) => {
     // Check if member already has access
     const existingAccess = await prisma.workspaceUser.findFirst({
       where: {
-        workspaceId: parseInt(workspaceId),
+        workspaceId: workspaceId,
         userId: memberId
       }
     });
@@ -169,9 +169,9 @@ exports.grantWorkspaceAccess = async (req, res) => {
       });
     } else {
       // Grant new access
-      const workspaceAccess = await prisma.workspaceUser.create({
+      const workspaceAccess =       await prisma.workspaceUser.create({
         data: {
-          workspaceId: parseInt(workspaceId),
+          workspaceId: workspaceId,
           userId: memberId,
           role,
         },

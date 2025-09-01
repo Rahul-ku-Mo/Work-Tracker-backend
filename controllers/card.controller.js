@@ -1,10 +1,12 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-const { generateUniqueSlug } = require("../utils/slugUtils");
-const { processMentionsWithDiff, updateMentionsWithDiff } = require("../utils/enhancedMentionUtils");
+// Slug generation is now handled automatically via workspace prefix + number
+const {
+  processMentionsWithDiff,
+  updateMentionsWithDiff,
+} = require("../utils/enhancedMentionUtils");
 const notificationController = require("./notification.controller");
 const { pusherServer } = require("../services/pusherServer");
-
 
 const createCard = async (req, res) => {
   const { columnId } = req.query;
@@ -21,7 +23,7 @@ const createCard = async (req, res) => {
   const {
     title,
     description,
-    labels,
+    labelIds,
     attachments,
     dueDate,
     priority,
@@ -32,52 +34,84 @@ const createCard = async (req, res) => {
   } = req.body;
 
   try {
-    const maxOrder = await prisma.card.aggregate({
-      where: { columnId: parsedColumnId },
-      _max: { order: true },
-    });
+    // Use transaction to ensure atomic card creation with workspace numbering
+    const card = await prisma.$transaction(async (tx) => {
+      // Get workspace through column relationship
+      const column = await tx.column.findUnique({
+        where: { id: parsedColumnId },
+        include: { workspace: true },
+      });
 
-    const newOrder = (maxOrder._max.order || 0) + 1;
+      if (!column) {
+        throw new Error("Column not found");
+      }
 
-    const slug = await generateUniqueSlug(title, async (slug) => {
-      const existing = await prisma.card.findFirst({ where: { slug } });
-      return !!existing;
-    });
+      // Get max order for this column
+      const maxOrder = await tx.card.aggregate({
+        where: { columnId: parsedColumnId },
+        _max: { order: true },
+      });
 
-    const card = await prisma.card.create({
-      data: {
-        title: title,
-        slug: slug,
-        description: description,
-        labels: labels,
-        attachments: attachments,
-        dueDate: dueDate,
-        priority: priority,
-        storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : 0,
-        order: newOrder,
-        project: projectId
-          ? {
-              connect: {
-                id: parseInt(projectId),
-              },
-            }
-          : undefined,
-        column: {
-          connect: {
-            id: parsedColumnId,
+      const newOrder = (maxOrder._max.order || 0) + 1;
+
+      // Increment workspace counter and get the new number
+      const updatedWorkspace = await tx.workspace.update({
+        where: { id: column.workspace.id },
+        data: { nextCardNum: { increment: 1 } },
+        select: { prefix: true, nextCardNum: true },
+      });
+
+      // Create card with workspace-scoped number
+      const workspaceNumber = updatedWorkspace.nextCardNum;
+      const slug = `${updatedWorkspace.prefix}-${workspaceNumber}`;
+
+      return await tx.card.create({
+        data: {
+          title: title,
+          slug: slug,
+          workspaceNumber: workspaceNumber,
+          description: description,
+          attachments: attachments,
+          dueDate: dueDate,
+          priority: priority,
+          storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : 0,
+          order: newOrder,
+          project: projectId
+            ? {
+                connect: {
+                  id: parseInt(projectId),
+                },
+              }
+            : undefined,
+          column: {
+            connect: {
+              id: parsedColumnId,
+            },
+          },
+          labels:
+            labelIds && labelIds.length > 0
+              ? {
+                  connect: labelIds.map((id) => ({ id })),
+                }
+              : undefined,
+          assignees: assigneeIds
+            ? {
+                connect: assigneeIds.map((id) => ({ id })),
+              }
+            : undefined,
+        },
+        include: {
+          assignees: true,
+          comments: true,
+          project: true,
+          labels: true,
+          column: {
+            include: {
+              workspace: true,
+            },
           },
         },
-        assignees: assigneeIds
-          ? {
-              connect: assigneeIds.map((id) => ({ id })),
-            }
-          : undefined,
-      },
-      include: {
-        assignees: true,
-        comments: true,
-        project: true,
-      },
+      });
     });
 
     // Process mentions in **description only**
@@ -104,20 +138,22 @@ const createCard = async (req, res) => {
 
     // Send workspace update via Pusher
     try {
-      const workspace = await prisma.workspace.findFirst({
-        where: { columns: { some: { id: parsedColumnId } } },
-        include: { members: { include: { user: true } } },
-      });
-
-      if (workspace) {
-        await pusherServer.trigger(`workspace-${workspace.slug}`, "card-created", {
-          cardId: card.id,
-          action: "create",
-          timestamp: new Date().toISOString(),
-        });
+      if (card.column.workspace) {
+        await pusherServer.trigger(
+          `workspace-${card.column.workspace.slug}`,
+          "card-created",
+          {
+            cardId: card.id,
+            action: "create",
+            timestamp: new Date().toISOString(),
+          }
+        );
       }
     } catch (pusherError) {
-      console.error("Error sending Pusher notification for card creation:", pusherError);
+      console.error(
+        "Error sending Pusher notification for card creation:",
+        pusherError
+      );
     }
 
     res.status(201).json({
@@ -134,7 +170,6 @@ const createCard = async (req, res) => {
   }
 };
 
-
 const updateCard = async (req, res) => {
   const { cardId } = req.params;
   const { userId } = req.user;
@@ -143,7 +178,7 @@ const updateCard = async (req, res) => {
     title,
     description,
     columnId,
-    label: newLabel,
+    labelId: newLabelId,
     attachments,
     dueDate,
     order,
@@ -158,6 +193,7 @@ const updateCard = async (req, res) => {
       where: { id: parseInt(cardId) },
       include: {
         assignees: true,
+        labels: true,
         column: {
           include: {
             workspace: {
@@ -179,43 +215,62 @@ const updateCard = async (req, res) => {
       });
     }
 
-    let updatedLabels;
-    if (newLabel && currentCard.labels.includes(newLabel)) {
-      updatedLabels = currentCard.labels.filter((label) => label !== newLabel);
-    } else if (newLabel) {
-      updatedLabels = [...currentCard.labels, newLabel];
-    } else {
-      updatedLabels = currentCard.labels;
+    // Handle label updates
+    let labelOperation = {};
+    if (newLabelId) {
+      const isCurrentlyAttached = currentCard.labels.some(
+        (label) => label.id === newLabelId
+      );
+      if (isCurrentlyAttached) {
+        // Remove the label
+        labelOperation = {
+          labels: {
+            disconnect: { id: newLabelId },
+          },
+        };
+      } else {
+        // Add the label
+        labelOperation = {
+          labels: {
+            connect: { id: newLabelId },
+          },
+        };
+      }
     }
 
     const updateData = {
       title: title ?? currentCard.title,
       description: description ?? currentCard.description,
       columnId: columnId ? parseInt(columnId) : currentCard.columnId,
-      labels: updatedLabels,
       attachments: attachments ?? currentCard.attachments,
-      dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : currentCard.dueDate,
+      dueDate:
+        dueDate !== undefined
+          ? dueDate
+            ? new Date(dueDate)
+            : null
+          : currentCard.dueDate,
       order: order ?? currentCard.order,
       priority: priority ?? currentCard.priority,
-      storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : currentCard.storyPoints,
-      projectId: projectId !== undefined ? (projectId || null) : currentCard.projectId,
+      storyPoints:
+        storyPoints !== undefined
+          ? parseInt(storyPoints)
+          : currentCard.storyPoints,
+      projectId:
+        projectId !== undefined ? projectId || null : currentCard.projectId,
+      ...labelOperation,
     };
 
-    if (title && title !== currentCard.title) {
-      updateData.slug = await generateUniqueSlug(title, async (slug) => {
-        const existing = await prisma.card.findFirst({
-          where: { slug, id: { not: parseInt(cardId) } },
-        });
-        return !!existing;
-      });
-    }
+    // Note: We don't update the slug when title changes since it's tied to workspace numbering
+    // The slug follows the format "PREFIX-NUMBER" and should remain constant
 
     let wasAssigned = false;
     if (assigneeId !== undefined) {
       if (assigneeId === null || assigneeId === "") {
         updateData.assignees = { set: [] };
       } else {
-        const isAlreadyAssigned = currentCard.assignees.some((a) => a.id === assigneeId);
+        const isAlreadyAssigned = currentCard.assignees.some(
+          (a) => a.id === assigneeId
+        );
         if (!isAlreadyAssigned) {
           updateData.assignees = { set: [{ id: assigneeId }] };
           wasAssigned = true;
@@ -236,6 +291,7 @@ const updateCard = async (req, res) => {
             imageUrl: true,
           },
         },
+        labels: true,
         project: true,
         column: {
           include: {
@@ -252,7 +308,11 @@ const updateCard = async (req, res) => {
     });
 
     if (wasAssigned && assigneeId) {
-      await notificationController.notifyCardAssignment(parseInt(cardId), assigneeId, userId);
+      await notificationController.notifyCardAssignment(
+        parseInt(cardId),
+        assigneeId,
+        userId
+      );
     }
 
     // Process mentions in **description only**
@@ -278,14 +338,20 @@ const updateCard = async (req, res) => {
     }
 
     try {
-      const workspaceId = updatedCard.column.workspace.slug;
-      await pusherServer.trigger(`workspace-${workspaceId}`, "card-updated", {
-        cardId: updatedCard.id,
-        action: "update",
-        timestamp: new Date().toISOString(),
-      });
+      await pusherServer.trigger(
+        `workspace-${updatedCard.column.workspace.slug}`,
+        "card-updated",
+        {
+          cardId: updatedCard.id,
+          action: "update",
+          timestamp: new Date().toISOString(),
+        }
+      );
     } catch (pusherError) {
-      console.error("Error sending Pusher notification for card update:", pusherError);
+      console.error(
+        "Error sending Pusher notification for card update:",
+        pusherError
+      );
     }
 
     res.status(200).json({
@@ -309,6 +375,7 @@ const getCards = async (req, res) => {
       },
       include: {
         comments: true,
+        labels: true,
         assignees: {
           select: {
             id: true,
@@ -341,6 +408,7 @@ const getCard = async (req, res) => {
       },
       include: {
         comments: true,
+        labels: true,
         assignees: {
           select: {
             id: true,
@@ -367,11 +435,38 @@ const deleteCard = async (req, res) => {
   const { cardId } = req.params;
 
   try {
-    await prisma.card.delete({
+    const card = await prisma.card.delete({
       where: {
         id: parseInt(cardId),
       },
+      include: {
+        column: {
+          include: {
+            workspace: true,
+          },
+        },
+      },
     });
+
+    // Send workspace update via Pusher
+    try {
+      if (card.column.workspace) {
+        await pusherServer.trigger(
+          `workspace-${card.column.workspace.slug}`,
+          "card-deleted",
+          {
+            cardId: card.id,
+            action: "deleted",
+            timestamp: new Date().toISOString(),
+          }
+        );
+      }
+    } catch (pusherError) {
+      console.error(
+        "Error sending Pusher notification for card creation:",
+        pusherError
+      );
+    }
 
     res.status(204).json({
       status: 204,
@@ -500,7 +595,7 @@ const markCardComplete = async (req, res) => {
   try {
     const card = await prisma.card.findUnique({
       where: { id: parseInt(cardId) },
-      include: { column: true }
+      include: { column: true },
     });
 
     if (!card) {
@@ -529,15 +624,33 @@ const markCardComplete = async (req, res) => {
             imageUrl: true,
           },
         },
-        column: true,
+        column: {
+          include: {
+            workspace: true,
+          },
+        },
       },
     });
 
     // Send completion notification
-    await notificationController.notifyCardCompletion(
-      parseInt(cardId),
-      userId
-    );
+    await notificationController.notifyCardCompletion(parseInt(cardId), userId);
+
+    try {
+      await pusherServer.trigger(
+        `workspace-${updatedCard.column.workspace.slug}`,
+        "card-updated",
+        {
+          cardId: updatedCard.id,
+          action: "update",
+          timestamp: new Date().toISOString(),
+        }
+      );
+    } catch (pusherError) {
+      console.error(
+        "Error sending Pusher notification for card update:",
+        pusherError
+      );
+    }
 
     res.status(200).json({
       status: 200,
@@ -556,7 +669,7 @@ const markCardIncomplete = async (req, res) => {
 
   try {
     const card = await prisma.card.findUnique({
-      where: { id: parseInt(cardId) }
+      where: { id: parseInt(cardId) },
     });
 
     if (!card) {
@@ -582,9 +695,31 @@ const markCardIncomplete = async (req, res) => {
             imageUrl: true,
           },
         },
-        column: true,
+        labels: true,
+        column: {
+          include: {
+            workspace: true,
+          },
+        },
       },
     });
+
+    try {
+      await pusherServer.trigger(
+        `workspace-${updatedCard.column.workspace.slug}`,
+        "card-updated",
+        {
+          cardId: updatedCard.id,
+          action: "update",
+          timestamp: new Date().toISOString(),
+        }
+      );
+    } catch (pusherError) {
+      console.error(
+        "Error sending Pusher notification for card update:",
+        pusherError
+      );
+    }
 
     res.status(200).json({
       status: 200,
@@ -603,12 +738,12 @@ const getCardsWithStatus = async (req, res) => {
 
   try {
     const whereClause = {};
-    
+
     if (columnId) {
       whereClause.columnId = parseInt(columnId);
     } else if (boardId) {
       whereClause.column = {
-        boardId: parseInt(boardId)
+        boardId: parseInt(boardId),
       };
     }
 
@@ -616,6 +751,7 @@ const getCardsWithStatus = async (req, res) => {
       where: whereClause,
       include: {
         comments: true,
+        labels: true,
         assignees: {
           select: {
             id: true,
@@ -636,20 +772,24 @@ const getCardsWithStatus = async (req, res) => {
 
     // Add computed status fields
     const now = new Date();
-    const cardsWithStatus = cards.map(card => {
+    const cardsWithStatus = cards.map((card) => {
       const isCompleted = !!card.completedAt;
-      const isOverdue = !isCompleted && card.dueDate && new Date(card.dueDate) < now;
-      
+      const isOverdue =
+        !isCompleted && card.dueDate && new Date(card.dueDate) < now;
+
       return {
         ...card,
         status: {
           isCompleted,
           isOverdue,
           isOnTime: card.isOnTime,
-          daysOverdue: isOverdue 
-            ? Math.ceil((now.getTime() - new Date(card.dueDate).getTime()) / (1000 * 60 * 60 * 24))
-            : 0
-        }
+          daysOverdue: isOverdue
+            ? Math.ceil(
+                (now.getTime() - new Date(card.dueDate).getTime()) /
+                  (1000 * 60 * 60 * 24)
+              )
+            : 0,
+        },
       };
     });
 
@@ -663,7 +803,6 @@ const getCardsWithStatus = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 
 module.exports = {
   getCardDetails,

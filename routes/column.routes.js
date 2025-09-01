@@ -1,10 +1,10 @@
 const express = require("express");
-const columnController = require("../controllers/columnController");
+const columnController = require("../controllers/column.controller");
 
 const router = express.Router();
 
 router
-  .route("/")
+  .route("/:teamId/:workspaceSlug")
   .get(columnController.getColumns)
   .post(columnController.createColumn);
 

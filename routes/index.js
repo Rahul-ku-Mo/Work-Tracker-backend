@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 
 const userRouter = require("./userRoutes");
-const workspaceRouter = require("./workspaceRoutes");
+const workspaceRouter = require("./workspace.routes");
 const authRouter = require("./authRoutes");
 const commentRouter = require("./commentRoutes");
-const columnRouter = require("./columnRoutes");
+const columnRouter = require("./column.routes");
 const cardRouter = require("./cardRoutes");
 const notificationRouter = require("./notification.routes");
 const teamRouter = require("./teamRoutes");
@@ -20,6 +20,7 @@ const billingRouter = require("./billing.routes");
 const notesRouter = require("./notes.routes");
 const feedbackRouter = require("./feedback.routes");
 const projectRouter = require("./project.routes");
+const labelRouter = require("./label.routes");
 
 // Auth routes
 router.use("/", authRouter);
@@ -44,6 +45,7 @@ router.get("/auth/onboarding", onboardingController.checkOnboarding);
 
 router.use("/users", userRouter);
 router.use("/workspaces", workspaceRouter);
+// Columns are now managed through workspace routes: /workspaces/:teamId/:slug/columns
 router.use("/columns", columnRouter);
 router.use("/cards", cardRouter);
 router.use("/comments", commentRouter);
@@ -54,5 +56,6 @@ router.use("/analytics", analyticsRouter);
 router.use("/time-entries", timeEntryRouter);
 router.use("/notes", notesRouter);
 router.use("/projects", projectRouter);
+router.use("/labels", labelRouter);
 
 module.exports = router;

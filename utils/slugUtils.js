@@ -81,10 +81,60 @@ async function generateUniqueWorkspaceSlug(title, checkExisting) {
   return slug;
 }
 
+/**
+ * Predefined workspace prefixes mapping
+ */
+const workspacePrefixes = {
+  "Engineering": "ENG",
+  "Design": "DES", 
+  "Marketing": "MKT",
+  "Solutions": "SOL",
+  "Solven": "SLV" // Different prefix to avoid collision
+};
+
+/**
+ * Generate a unique prefix for workspace based on title
+ * @param {string} workspaceTitle - The workspace title
+ * @param {Function} checkExisting - Function to check if prefix already exists
+ * @returns {Promise<string>} - The generated unique prefix
+ */
+async function generateUniquePrefix(workspaceTitle, checkExisting) {
+  // Check if we have a predefined prefix for this title
+  const predefinedPrefix = workspacePrefixes[workspaceTitle];
+  if (predefinedPrefix) {
+    const existing = await checkExisting(predefinedPrefix);
+    if (!existing) {
+      return predefinedPrefix;
+    }
+  }
+
+  // Generate prefix from title (first 3 characters, uppercase)
+  const basePrefix = workspaceTitle.toUpperCase().substring(0, 3);
+  
+  // Check if prefix already exists
+  const existing = await checkExisting(basePrefix);
+  
+  if (!existing) {
+    return basePrefix;
+  }
+  
+  // Generate alternative if collision - use first 2 chars + number
+  let counter = 1;
+  let newPrefix = basePrefix.substring(0, 2) + counter;
+  
+  while (await checkExisting(newPrefix)) {
+    counter++;
+    newPrefix = basePrefix.substring(0, 2) + counter;
+  }
+  
+  return newPrefix;
+}
+
 module.exports = {
   generateSlug,
   generateUniqueSlug,
   generateCapitalizedSlug,
   generateWorkspaceSlug,
-  generateUniqueWorkspaceSlug
+  generateUniqueWorkspaceSlug,
+  generateUniquePrefix
 }; 

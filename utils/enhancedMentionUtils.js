@@ -229,8 +229,11 @@ async function processMentionsWithDiff(
       select: { id: true, username: true, name: true, imageUrl: true },
     });
 
+    // Filter out self-mentions (don't send notifications to yourself)
+    const usersToNotifyFiltered = usersToNotify.filter(user => user.id !== authorId);
+
     // Create mention records and notifications
-    const notificationPromises = usersToNotify.map(async (user) => {
+    const notificationPromises = usersToNotifyFiltered.map(async (user) => {
       try {
         await prisma.mention.create({
           data: {
@@ -289,7 +292,7 @@ async function processMentionsWithDiff(
     return {
       success: true,
       newNotifications: successfulNotifications.length,
-      mentionedUsers: usersToNotify.map(u => u.username),
+      mentionedUsers: usersToNotifyFiltered.map(u => u.username),
       message: `Created ${successfulNotifications.length} notifications`,
     };
   } catch (error) {
@@ -350,8 +353,11 @@ async function updateMentionsWithDiff(
       select: { id: true, username: true, name: true, imageUrl: true }
     });
 
+    // Filter out self-mentions (don't send notifications to yourself)
+    const usersToNotifyFiltered = usersToNotify.filter(user => user.id !== authorId);
+
     // Create new mention records and notifications
-    const notificationPromises = usersToNotify.map(async (user) => {
+    const notificationPromises = usersToNotifyFiltered.map(async (user) => {
       try {
         await prisma.mention.create({
           data: {
@@ -411,7 +417,7 @@ async function updateMentionsWithDiff(
       success: true,
       newNotifications: successfulNotifications.length,
       removedMentions: removedMentions.length,
-      mentionedUsers: usersToNotify.map(u => u.username),
+      mentionedUsers: usersToNotifyFiltered.map(u => u.username),
       message: `Created ${successfulNotifications.length} notifications, removed ${removedMentions.length} mentions`,
     };
   } catch (error) {
