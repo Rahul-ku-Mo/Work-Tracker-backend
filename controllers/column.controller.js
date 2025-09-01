@@ -1,93 +1,40 @@
 const { prisma } = require("../db");
 
-// Helper function to resolve workspace identifier to workspace ID
-const resolveWorkspaceId = async (workspaceIdentifier) => {
-  const isNumeric = /^\d+$/.test(workspaceIdentifier);
-  
-  if (isNumeric) {
-    return parseInt(workspaceIdentifier);
-  }
-  
-  // If it's a slug, find the workspace by slug and return its ID
-  const workspace = await prisma.workspace.findUnique({
-    where: { slug: workspaceIdentifier },
-    select: { id: true }
-  });
-  
-  if (!workspace) {
-    throw new Error("Workspace not found");
-  }
-  
-  return workspace.id;
-};
-
 exports.getColumns = async (req, res) => {
-  const { workspaceId } = req.query;
-  const { teamId, slug } = req.params;
+  const { teamId, workspaceSlug : slug } = req.params;
 
-  // Support both new teamId + slug pattern and legacy workspaceId query parameter
-  let resolvedWorkspaceId;
-  
-  if (teamId && slug) {
-    // New pattern: teamId + slug from URL params
-    try {
-      const workspace = await prisma.workspace.findFirst({
-        where: { 
-          slug: slug,
-          user: {
-            teamId: teamId
-          }
-        },
-        select: { id: true }
-      });
-      
-      if (!workspace) {
-        return res.status(404).json({
-          status: 404,
-          message: "Workspace not found",
-        });
-      }
-      
-      resolvedWorkspaceId = workspace.id;
-    } catch (error) {
-      console.log(error);
-      return res.status(500).json({ 
-        status: 500, 
-        message: "Internal Server Error" 
-      });
-    }
-  } else if (workspaceId) {
-    // Legacy pattern: workspaceId from query parameter
-    try {
-      resolvedWorkspaceId = await resolveWorkspaceId(workspaceId);
-    } catch (error) {
-      console.log(error);
-      if (error.message === "Workspace not found") {
-        return res.status(404).json({ 
-          status: 404, 
-          message: "Workspace not found" 
-        });
-      } else {
-        return res.status(500).json({ 
-          status: 500, 
-          message: error.message 
-        });
-      }
-    }
-  } else {
+  if (!teamId || !slug) {
     return res.status(400).json({
       status: 400,
-      message: "Either workspaceId query parameter or teamId and slug path parameters are required",
+      message: "Both teamId and slug are required",
     });
   }
 
   try {
+    const workspace = await prisma.workspace.findFirst({
+      where: { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      },
+      select: { id: true }
+    });
+    
+    if (!workspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found",
+      });
+    }
+
     const columns = await prisma.column.findMany({
-      where: { workspaceId: resolvedWorkspaceId },
+      where: { workspaceId: workspace.id },
       include: {
         cards: {
           include: {
             assignees: true,
+            labels: true
           }
         }
       },
@@ -108,66 +55,33 @@ exports.getColumns = async (req, res) => {
 };
 
 exports.createColumn = async (req, res) => {
-  const { workspaceId } = req.query;
-  const { teamId, slug } = req.params;
+  const { teamId, workspaceSlug: slug } = req.params;
   
-  // Support both new teamId + slug pattern and legacy workspaceId query parameter
-  let resolvedWorkspaceId;
-  
-  if (teamId && slug) {
-    // New pattern: teamId + slug from URL params
-    try {
-      const workspace = await prisma.workspace.findFirst({
-        where: { 
-          slug: slug,
-          user: {
-            teamId: teamId
-          }
-        },
-        select: { id: true }
-      });
-      
-      if (!workspace) {
-        return res.status(404).json({
-          status: 404,
-          message: "Workspace not found",
-        });
-      }
-      
-      resolvedWorkspaceId = workspace.id;
-    } catch (error) {
-      console.log(error);
-      return res.status(500).json({ 
-        status: 500, 
-        message: "Internal Server Error" 
-      });
-    }
-  } else if (workspaceId) {
-    // Legacy pattern: workspaceId from query parameter
-    try {
-      resolvedWorkspaceId = await resolveWorkspaceId(workspaceId);
-    } catch (error) {
-      console.log(error);
-      if (error.message === "Workspace not found") {
-        return res.status(404).json({ 
-          status: 404, 
-          message: "Workspace not found" 
-        });
-      } else {
-        return res.status(500).json({ 
-          status: 500, 
-          message: error.message 
-        });
-      }
-    }
-  } else {
+  if (!teamId || !slug) {
     return res.status(400).json({
       status: 400,
-      message: "Either workspaceId query parameter or teamId and slug path parameters are required",
+      message: "Both teamId and slug are required",
     });
   }
 
   try {
+    const workspace = await prisma.workspace.findFirst({
+      where: { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      },
+      select: { id: true }
+    });
+    
+    if (!workspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found",
+      });
+    }
+
     const { title } = req.body;
 
     if (!title || !title.trim()) {
@@ -178,7 +92,7 @@ exports.createColumn = async (req, res) => {
     }
 
     const lastColumn = await prisma.column.findFirst({
-      where: { workspaceId: resolvedWorkspaceId },
+      where: { workspaceId: workspace.id },
       orderBy: { order: "desc" },
       select: { order: true },
     });
@@ -192,7 +106,7 @@ exports.createColumn = async (req, res) => {
         title,
         order: newOrder,
         workspace: {
-          connect: { id: resolvedWorkspaceId },
+          connect: { id: workspace.id },
         },
       },
     });

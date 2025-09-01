@@ -1,47 +1,27 @@
 const { prisma } = require("../db");
 
 const checkWorkspaceAccess = async (req, res, next) => {
-  const { workspaceId, teamId, slug } = req.params;
+  const { teamId, slug } = req.params;
   const { userId } = req.user;
 
-  // Support both old ID-based lookup and new teamId + slug lookup
-  if (!workspaceId && (!teamId || !slug)) {
+  // Workspace access check
+  if (!teamId || !slug) {
     return res.status(400).json({
       status: 400,
-      message: "Either workspace ID or both team ID and slug are required",
+      message: "Both team ID and slug are required",
     });
   }
 
   try {
-    let workspace;
-    
-    if (workspaceId) {
-      // Legacy lookup by ID or slug
-      const isNumeric = /^\d+$/.test(workspaceId);
-      
-      if (isNumeric) {
-        workspace = await prisma.workspace.findUnique({
-          where: { id: parseInt(workspaceId) },
-          select: { id: true }
-        });
-      } else {
-        workspace = await prisma.workspace.findUnique({
-          where: { slug: workspaceId },
-          select: { id: true }
-        });
-      }
-    } else {
-      // New lookup by teamId + slug
-      workspace = await prisma.workspace.findFirst({
-        where: { 
-          slug: slug,
-          user: {
-            teamId: teamId
-          }
-        },
-        select: { id: true }
-      });
-    }
+    const workspace = await prisma.workspace.findFirst({
+      where: { 
+        slug: slug,
+        user: {
+          teamId: teamId
+        }
+      },
+      select: { id: true }
+    });
 
     if (!workspace) {
       return res.status(404).json({
