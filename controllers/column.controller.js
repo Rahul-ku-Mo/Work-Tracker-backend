@@ -1,7 +1,8 @@
 const { prisma } = require("../db");
+const { pusherServer } = require("../services/pusherServer");
 
 exports.getColumns = async (req, res) => {
-  const { teamId, workspaceSlug : slug } = req.params;
+  const { teamId, workspaceSlug: slug } = req.params;
 
   if (!teamId || !slug) {
     return res.status(400).json({
@@ -14,7 +15,7 @@ exports.getColumns = async (req, res) => {
     const workspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },
@@ -68,11 +69,11 @@ exports.createColumn = async (req, res) => {
     const workspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },
-      select: { id: true }
+      select: { id: true, slug: true }
     });
     
     if (!workspace) {
@@ -110,6 +111,21 @@ exports.createColumn = async (req, res) => {
         },
       },
     });
+
+    // Send workspace update via Pusher
+    try {
+      await pusherServer.trigger(
+        `workspace-${workspace.slug}`,
+        "column-created",
+        {
+          columnId: column.id,
+          action: "create",
+        }
+      );
+    } catch (pusherError) {
+      console.error("Pusher error:", pusherError);
+      // Don't fail the request if Pusher fails
+    }
 
     res.status(201).json({
       status: 201,
@@ -189,11 +205,44 @@ exports.updateColumn = async (req, res) => {
 exports.deleteColumn = async (req, res) => {
   const { columnId } = req.params;
   try {
+    // Get column with workspace info before deleting
+    const column = await prisma.column.findUnique({
+      where: { id: parseInt(columnId) },
+      include: {
+        workspace: {
+          select: { slug: true }
+        }
+      }
+    });
+
+    if (!column) {
+      return res.status(404).json({
+        status: 404,
+        message: "Column not found"
+      });
+    }
+
     await prisma.column.delete({
       where: {
         id: parseInt(columnId),
       },
     });
+
+    // Send workspace update via Pusher
+    try {
+      await pusherServer.trigger(
+        `workspace-${column.workspace.slug}`,
+        "column-deleted",
+        {
+          columnId: column.id,
+          action: "delete",
+        }
+      );
+    } catch (pusherError) {
+      console.error("Pusher error:", pusherError);
+      // Don't fail the request if Pusher fails
+    }
+
     res.status(204).json({
       status: 204,
       message: "Success",

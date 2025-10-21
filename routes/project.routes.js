@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const projectController = require('../controllers/project.controller');
 const authenticate = require('../middleware/auth');
+const { requireWithinLimits } = require('../middleware/featureGating');
 
 // Get all projects for a team
 router.get('/', authenticate, projectController.getProjects);
@@ -13,7 +14,7 @@ router.get('/:projectSlug', authenticate, projectController.getProject);
 router.get('/:projectSlug/workspaces', authenticate, projectController.getProjectWorkspaces);
 
 // Create a new project
-router.post('/', authenticate, projectController.createProject);
+router.post('/', authenticate, requireWithinLimits('projects'), projectController.createProject);
 
 // Update a project
 router.put('/:projectSlug', authenticate, projectController.updateProject);
@@ -38,5 +39,7 @@ router.patch('/:projectSlug/priority', authenticate, projectController.updatePro
 
 // Update milestone completion
 router.patch('/:projectSlug/milestone/completion', authenticate, projectController.updateMilestoneCompletion);
+
+
 
 module.exports = router; 

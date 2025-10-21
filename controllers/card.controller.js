@@ -29,7 +29,6 @@ const createCard = async (req, res) => {
     priority,
     storyPoints,
     order,
-    projectId,
     assigneeIds,
   } = req.body;
 
@@ -76,13 +75,6 @@ const createCard = async (req, res) => {
           priority: priority,
           storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : 0,
           order: newOrder,
-          project: projectId
-            ? {
-                connect: {
-                  id: parseInt(projectId),
-                },
-              }
-            : undefined,
           column: {
             connect: {
               id: parsedColumnId,
@@ -103,7 +95,6 @@ const createCard = async (req, res) => {
         include: {
           assignees: true,
           comments: true,
-          project: true,
           labels: true,
           column: {
             include: {
@@ -185,7 +176,6 @@ const updateCard = async (req, res) => {
     priority,
     assigneeId,
     storyPoints,
-    projectId,
   } = req.body;
 
   try {
@@ -255,8 +245,6 @@ const updateCard = async (req, res) => {
         storyPoints !== undefined
           ? parseInt(storyPoints)
           : currentCard.storyPoints,
-      projectId:
-        projectId !== undefined ? projectId || null : currentCard.projectId,
       ...labelOperation,
     };
 
@@ -292,7 +280,6 @@ const updateCard = async (req, res) => {
           },
         },
         labels: true,
-        project: true,
         column: {
           include: {
             workspace: {

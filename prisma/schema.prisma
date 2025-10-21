@@ -26,69 +26,79 @@ model User {
   role                     AppRole                  @default(USER)
   updatedAt                DateTime                 @updatedAt
   paddleCustomerId         String?                  @unique
-  teamId                   String?
   efficiency               Int?
   AiConversation           AiConversation[]
-  Workspace                Workspace[]
-  sentWorkspaceInvitations WorkspaceInvitation[]    @relation("WorkspaceInvitationSender")
-  workspaces               WorkspaceUser[]
+  attachments              Attachment[]             @relation("UserAttachments")
   createdCards             Card[]                   @relation("cardCreator")
+  resolvedComments         Comment[]                @relation("CommentResolver")
   comments                 Comment[]
   imageUploads             ImageUpload[]            @relation("ImageUploads")
-  attachments              Attachment[]             @relation("UserAttachments")
   notes                    Note[]                   @relation("UserNotes")
   noteCategories           NoteCategory[]           @relation("UserNoteCategories")
   receivedNotification     Notification[]           @relation("receiver")
   sentNotification         Notification[]           @relation("sender")
   performanceMetrics       PerformanceMetric[]      @relation("userMetrics")
-  projects                 Project[]                @relation("UserProjects")
   projectsLed              Project[]                @relation("ProjectLead")
   projectsMember           ProjectMember[]
-  captainOf                Team?                    @relation("TeamCaptain")
   timeEntries              TimeEntry[]
-  team                     Team?                    @relation("TeamMembers", fields: [teamId], references: [id])
   performanceHistory       UserPerformanceHistory[] @relation("userPerformanceHistory")
+  sentWorkspaceInvitations WorkspaceInvitation[]    @relation("WorkspaceInvitationSender")
+  workspaces               WorkspaceUser[]
+  mentions                 Mention[]
   subscription             Subscription?
   assignedCards            Card[]                   @relation("assignee")
-  mentions                 Mention[]
-  resolvedComments         Comment[]                @relation("CommentResolver")
+  teamMemberships          TeamMember[]
 }
 
 model Team {
   id                   String                    @id @default(uuid())
   name                 String
   joinCode             String?                   @unique
-  captainId            String                    @unique
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   teamImageUrl         String?
   performanceMetrics   PerformanceMetric[]       @relation("teamMetrics")
   projects             Project[]                 @relation("TeamProjects")
   sprints              Sprint[]
-  captain              User                      @relation("TeamCaptain", fields: [captainId], references: [id])
   performanceSnapshots TeamPerformanceSnapshot[] @relation("teamSnapshots")
-  members              User[]                    @relation("TeamMembers")
-  labels               Label[]                   @relation("TeamLabels")
+  teamMembers          TeamMember[]
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String
+  role      TeamRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
 }
 
 model Workspace {
   id          Int                   @id @default(autoincrement())
   title       String
-  slug        String               @unique
-  prefix      String               @unique // "SOL", "ENG", "DES", etc.
-  nextCardNum Int                  @default(1) // Track next number within workspace
-  userId      String
+  slug        String                @unique
+  projectId   String
   colorId     String
   colorValue  String
   colorName   String
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
-  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nextCardNum Int                   @default(1)
+  prefix      String                @unique
+  columns     Column[]
+  labels      Label[]               @relation("WorkspaceLabels")
+  sprints     Sprint[]
+  project     Project               @relation("ProjectWorkspaces", fields: [projectId], references: [id], onDelete: Cascade)
   invitations WorkspaceInvitation[]
   members     WorkspaceUser[]
-  columns     Column[]
-  projects    ProjectWorkspace[]
-  sprints     Sprint[]
+
+  @@index([projectId])
 }
 
 model WorkspaceUser {
@@ -99,8 +109,8 @@ model WorkspaceUser {
   isFavorite  Boolean       @default(false)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
 }
@@ -116,8 +126,8 @@ model WorkspaceInvitation {
   usedAt      DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   inviter     User          @relation("WorkspaceInvitationSender", fields: [invitedBy], references: [id])
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([email])
   @@index([token])
@@ -127,39 +137,51 @@ model Column {
   id          Int       @id @default(autoincrement())
   order       Int
   title       String
-  workspaceId Int
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  workspaceId Int
   cards       Card[]
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 model Project {
-  id          String             @id @default(uuid())
+  id          String          @id @default(uuid())
   title       String
-  slug        String             @unique
+  slug        String          @unique
   summary     String?
   description String?
   startDate   DateTime?
   targetDate  DateTime?
-  milestones  Json[]
   priority    String?
-  status      String             @default("Not Started")
+  status      String          @default("Not Started")
   teamId      String
   leadId      String?
-  creatorId   String
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  cards       Card[]
-  creator     User               @relation("UserProjects", fields: [creatorId], references: [id], onDelete: Cascade)
-  lead        User?              @relation("ProjectLead", fields: [leadId], references: [id])
-  team        Team               @relation("TeamProjects", fields: [teamId], references: [id], onDelete: Cascade)
-  workspaces  ProjectWorkspace[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  milestones  Milestone[]
+  workspaces  Workspace[]     @relation("ProjectWorkspaces")
+  lead        User?           @relation("ProjectLead", fields: [leadId], references: [id])
+  team        Team            @relation("TeamProjects", fields: [teamId], references: [id], onDelete: Cascade)
   members     ProjectMember[]
 
   @@index([teamId])
   @@index([leadId])
-  @@index([creatorId])
+}
+
+model Milestone {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("INCOMPLETE")
+  targetDate  DateTime?
+  notes       String?
+  order       Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
 }
 
 model ProjectMember {
@@ -176,40 +198,37 @@ model ProjectMember {
 }
 
 model Card {
-  id              Int         @id @default(autoincrement())
+  id              Int          @id @default(autoincrement())
   title           String
-  slug            String      @unique // "SOL-1", "SOL-2" format
-  workspaceNumber Int         // Sequential number within workspace
+  slug            String       @unique
   order           Int
   description     String?
   columnId        Int
-  projectId       String?
   attachments     String[]
   priority        String?
-  storyPoints     Int?        @default(0)
-  createdAt       DateTime    @default(now())
+  storyPoints     Int?         @default(0)
+  createdAt       DateTime     @default(now())
   dueDate         DateTime?
-  updatedAt       DateTime    @updatedAt
+  updatedAt       DateTime     @updatedAt
   creatorId       String?
   estimatedHours  Float?
   actualHours     Float?
   completedAt     DateTime?
   isOnTime        Boolean?
   sprintId        String?
-  column          Column      @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  creator         User?       @relation("cardCreator", fields: [creatorId], references: [id])
-  project         Project?    @relation(fields: [projectId], references: [id])
-  sprint          Sprint?     @relation(fields: [sprintId], references: [id])
+  workspaceNumber Int
+  cardAttachments Attachment[]
+  column          Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  creator         User?        @relation("cardCreator", fields: [creatorId], references: [id])
+  sprint          Sprint?      @relation(fields: [sprintId], references: [id])
   comments        Comment[]
   timeEntries     TimeEntry[]
-  tags            Tag[]       @relation("CardToTag")
-  labels          Label[]     @relation("CardToLabel")
-  assignees       User[]      @relation("assignee")
-  cardAttachments Attachment[]
+  labels          Label[]      @relation("CardToLabel")
+  tags            Tag[]        @relation("CardToTag")
+  assignees       User[]       @relation("assignee")
 
-  @@unique([columnId, workspaceNumber], name: "card_workspace_number") // Ensure unique numbering within workspace
+  @@unique([columnId, workspaceNumber], name: "card_workspace_number")
   @@index([sprintId])
-  @@index([projectId])
 }
 
 model Comment {
@@ -217,17 +236,17 @@ model Comment {
   content         String
   cardId          Int
   userId          String
-  parentCommentId Int?      // NULL for top-level comments, references parent for replies
-  isResolved      Boolean   @default(false) // For Linear-style comment resolution
-  resolvedAt      DateTime? // When the comment was resolved
-  resolvedById    String?   // Who resolved the comment
   createdAt       DateTime  @default(now())
+  isResolved      Boolean   @default(false)
+  parentCommentId Int?
+  resolvedAt      DateTime?
+  resolvedById    String?
   updatedAt       DateTime  @updatedAt
   card            Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resolvedBy      User?     @relation("CommentResolver", fields: [resolvedById], references: [id])
   parentComment   Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
   replies         Comment[] @relation("CommentReplies")
+  resolvedBy      User?     @relation("CommentResolver", fields: [resolvedById], references: [id])
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([userId])
@@ -236,21 +255,21 @@ model Comment {
 }
 
 model Notification {
-  id           Int      @id @default(autoincrement())
-  senderId     String
-  receiverId   String
-  message      Message
-  metadata     String?
-  isRead       Boolean  @default(false)
-  readAt       DateTime?
-  type         String?  // 'mention', 'card_assigned', etc.
-  title        String?
-  contentType  String?  // 'task', 'project', 'note'
-  contentId    String?  // ID of the content being referenced
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  receiver     User     @relation("receiver", fields: [receiverId], references: [id])
-  sender       User     @relation("sender", fields: [senderId], references: [id])
+  id          Int       @id @default(autoincrement())
+  senderId    String
+  receiverId  String
+  message     String
+  metadata    String?
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  contentId   String?
+  contentType String?
+  readAt      DateTime?
+  title       String?
+  type        String?
+  receiver    User      @relation("receiver", fields: [receiverId], references: [id])
+  sender      User      @relation("sender", fields: [senderId], references: [id])
 
   @@index([receiverId])
   @@index([isRead])
@@ -285,15 +304,15 @@ model Sprint {
   endDate              DateTime
   plannedPoints        Float
   teamId               String
-  workspaceId          Int
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   completedPoints      Float?
   efficiency           Float?
+  workspaceId          Int
   cards                Card[]
   performanceMetrics   PerformanceMetric[]       @relation("sprintMetrics")
-  workspace            Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   team                 Team                      @relation(fields: [teamId], references: [id])
+  workspace            Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   performanceSnapshots TeamPerformanceSnapshot[]
 
   @@index([teamId])
@@ -319,17 +338,17 @@ model TimeEntry {
 }
 
 model Label {
-  id        String   @id @default(uuid())
-  name      String
-  color     String?
-  teamId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  team      Team     @relation("TeamLabels", fields: [teamId], references: [id], onDelete: Cascade)
-  cards     Card[]   @relation("CardToLabel")
+  id          String    @id @default(uuid())
+  name        String
+  color       String?
+  workspaceId Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation("WorkspaceLabels", fields: [workspaceId], references: [id], onDelete: Cascade)
+  cards       Card[]    @relation("CardToLabel")
 
-  @@unique([name, teamId]) // Label name must be unique within a team
-  @@index([teamId])
+  @@unique([name, workspaceId])
+  @@index([workspaceId])
 }
 
 model Tag {
@@ -370,11 +389,11 @@ model TeamPerformanceSnapshot {
   teamId     String
   date       DateTime
   velocity   Float
-  efficiency Float
-  createdAt  DateTime @default(now())
-  team       Team     @relation("teamSnapshots", fields: [teamId], references: [id])
-  sprint     Sprint?  @relation(fields: [sprintId], references: [id])
   sprintId   String?
+  createdAt  DateTime @default(now())
+  efficiency Float
+  sprint     Sprint?  @relation(fields: [sprintId], references: [id])
+  team       Team     @relation("teamSnapshots", fields: [teamId], references: [id])
 
   @@index([teamId])
   @@index([date])
@@ -384,9 +403,9 @@ model UserPerformanceHistory {
   id         String   @id @default(uuid())
   userId     String
   date       DateTime
+  createdAt  DateTime @default(now())
   efficiency Int
   velocity   Float
-  createdAt  DateTime @default(now())
   user       User     @relation("userPerformanceHistory", fields: [userId], references: [id])
 
   @@index([userId])
@@ -427,18 +446,18 @@ model ImageUpload {
 }
 
 model Attachment {
-  id         String   @id @default(uuid())
-  cardId     Int
-  userId     String
-  s3Key      String
-  fileName   String
-  fileSize   Int
-  mimeType   String
-  url        String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  card       Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  user       User     @relation("UserAttachments", fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  cardId    Int
+  userId    String
+  s3Key     String
+  fileName  String
+  fileSize  Int
+  mimeType  String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserAttachments", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([userId])
@@ -482,36 +501,19 @@ model Note {
   category    NoteCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   user        User         @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
 
-
   @@index([categoryId])
   @@index([userId])
   @@index([createdAt])
   @@index([isPublic])
 }
 
-model ProjectWorkspace {
-  id          String    @id @default(uuid())
-  projectId   String
-  workspaceId Int
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, workspaceId])
-  @@index([projectId])
-  @@index([workspaceId])
-}
-
 model Mention {
-  id           String   @id @default(cuid())
-  mentionedId  String   // User being mentioned
-  contentType  String   // "task", "project", "note"
-  contentId    String   // ID of task or project (as string)
-  createdAt    DateTime @default(now())
-
-  // Relations
-  mentionedUser User @relation(fields: [mentionedId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  mentionedId   String
+  contentType   String
+  contentId     String
+  createdAt     DateTime @default(now())
+  mentionedUser User     @relation(fields: [mentionedId], references: [id], onDelete: Cascade)
 
   @@unique([mentionedId, contentType, contentId])
   @@index([contentType, contentId])
@@ -525,6 +527,11 @@ enum AppRole {
 }
 
 enum WorkspaceRole {
+  ADMIN
+  MEMBER
+}
+
+enum TeamRole {
   ADMIN
   MEMBER
 }

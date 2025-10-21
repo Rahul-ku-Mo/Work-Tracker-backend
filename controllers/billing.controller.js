@@ -209,7 +209,7 @@ class BillingController {
           id: "enterprise",
           name: "Business",
           description: "For larger teams with advanced needs",
-          price: 29.99,
+          price: 49.99,
           currency: "usd",
           interval: "month",
           paddlePrice: process.env.PADDLE_PRICE_ID_BUSINESS,

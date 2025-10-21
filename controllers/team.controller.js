@@ -19,14 +19,18 @@ exports.createTeam = async (req, res) => {
       });
     }
 
-    // Check if user already has a team
-    const existingTeam = await prisma.team.findFirst({
+    // Check if user already has a team as admin
+    const existingTeamMember = await prisma.teamMember.findFirst({
       where: {
-        captainId: userId
+        userId: userId,
+        role: "ADMIN"
+      },
+      include: {
+        team: true
       }
     });
 
-    if (existingTeam) {
+    if (existingTeamMember) {
       return res.status(400).json({
         status: 400,
         message: "You already have a team",
@@ -41,28 +45,24 @@ exports.createTeam = async (req, res) => {
       data: {
         name,
         joinCode,
-        captainId: userId,
-        members: {
-          connect: {
-            id: userId
+        teamMembers: {
+          create: {
+            userId: userId,
+            role: "ADMIN"
           }
         }
       },
       include: {
-        members: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
-          }
-        },
-        captain: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
           }
         }
       }
@@ -83,29 +83,22 @@ exports.getTeam = async (req, res) => {
   const { userId } = req.user;
 
   try {
-    // Find team where user is either captain or member
+    // Find team where user is a team member (admin/owner)
     const team = await prisma.team.findFirst({
       where: {
-        OR: [
-          { captainId: userId },
-          { members: { some: { id: userId } } }
-        ]
+        teamMembers: { some: { userId: userId } }
       },
       include: {
-        members: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
-          }
-        },
-        captain: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
           }
         }
       }
@@ -141,12 +134,18 @@ exports.updateTeam = async (req, res) => {
       });
     }
 
-    // Find team where user is captain (only captain can update team name)
-    const team = await prisma.team.findFirst({
-      where: { captainId: userId }
+    // Find team where user is ADMIN (only admins can update team)
+    const teamMember = await prisma.teamMember.findFirst({
+      where: { 
+        userId: userId,
+        role: "ADMIN"
+      },
+      include: {
+        team: true
+      }
     });
 
-    if (!team) {
+    if (!teamMember) {
       return res.status(404).json({
         status: 404,
         message: "Team not found or you don't have permission to update it",
@@ -155,23 +154,19 @@ exports.updateTeam = async (req, res) => {
 
     // Update team name
     const updatedTeam = await prisma.team.update({
-      where: { id: team.id },
+      where: { id: teamMember.team.id },
       data: { name: name.trim(), teamImageUrl },
       include: {
-        members: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
-          }
-        },
-        captain: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
           }
         }
       }
@@ -214,7 +209,7 @@ exports.inviteMember = async (req, res) => {
       select: { role: true, name: true, email: true },
     });
 
-    // Check if requester is admin and captain of a team
+    // Check if requester is admin and has a team with ADMIN role
     if (user?.role !== "ADMIN") {
       return res.status(403).json({
         status: 403,
@@ -222,27 +217,25 @@ exports.inviteMember = async (req, res) => {
       });
     }
 
-    // Find the captain's team
-    const team = await prisma.team.findFirst({
+    // Find the user's team (must be ADMIN)
+    const teamMember = await prisma.teamMember.findFirst({
       where: {
-        captainId: userId
+        userId: userId,
+        role: "ADMIN"
       },
       include: {
-        captain: {
-          select: {
-            name: true,
-            email: true
-          }
-        }
+        team: true
       }
     });
 
-    if (!team) {
+    if (!teamMember) {
       return res.status(404).json({
         status: 404,
         message: "You don't have a team to invite members to",
       });
     }
+
+    const team = teamMember.team;
 
     const trimmedEmail = email.trim().toLowerCase();
 
@@ -265,10 +258,14 @@ exports.inviteMember = async (req, res) => {
       // User exists - check if already in a team
       const userCurrentTeam = await prisma.user.findUnique({
         where: { id: userToInvite.id },
-        include: { team: true }
+        include: { 
+          teamMemberships: {
+            select: { teamId: true }
+          }
+        }
       });
 
-      if (userCurrentTeam.team) {
+      if (userCurrentTeam.teamMemberships && userCurrentTeam.teamMemberships.length > 0) {
         return res.status(400).json({
           status: 400,
           message: "User is already a member of another team",
@@ -281,30 +278,34 @@ exports.inviteMember = async (req, res) => {
           id: team.id
         },
         data: {
-          members: {
-            connect: {
-              id: userToInvite.id
+          teamMembers: {
+            create: {
+              userId: userToInvite.id,
+              role: "MEMBER"
             }
           }
         },
         include: {
-          members: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              imageUrl: true,
-              role: true
+          teamMembers: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true
+                }
+              }
             }
           }
         }
       });
 
-      // Create notification for team captain about new member joining
+      // Create notification for team admin about new member joining
       await prisma.notification.create({
         data: {
           senderId: userToInvite.id,
-          receiverId: userId, // Send to team captain (admin)
+          receiverId: userId, // Send to team admin
           message: "JOIN",
           metadata: JSON.stringify({
             teamName: team.name,
@@ -377,10 +378,14 @@ exports.joinTeam = async (req, res) => {
     // Check if user is already in a team
     const userWithTeam = await prisma.user.findUnique({
       where: { id: userId },
-      include: { team: true }
+      include: { 
+        teamMemberships: {
+          select: { teamId: true }
+        }
+      }
     });
 
-    if (userWithTeam.team) {
+    if (userWithTeam.teamMemberships && userWithTeam.teamMemberships.length > 0) {
       return res.status(400).json({
         status: 400,
         message: "You are already a member of a team. Leave your current team first to join another.",
@@ -391,11 +396,15 @@ exports.joinTeam = async (req, res) => {
     const team = await prisma.team.findUnique({
       where: { joinCode: trimmedCode },
       include: {
-        captain: {
-          select: {
-            id: true,
-            name: true,
-            email: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
           }
         }
       }
@@ -408,55 +417,48 @@ exports.joinTeam = async (req, res) => {
       });
     }
 
-    // Check if user is trying to join their own team
-    if (team.captainId === userId) {
-      return res.status(400).json({
-        status: 400,
-        message: "You cannot join your own team using a join code",
-      });
-    }
-
     // Add user to team
     const updatedTeam = await prisma.team.update({
       where: { id: team.id },
       data: {
-        members: {
-          connect: { id: userId }
+        teamMembers: {
+          create: {
+            userId: userId,
+            role: "MEMBER"
+          }
         }
       },
       include: {
-        members: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true,
-            role: true
-          }
-        },
-        captain: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true
+              }
+            }
           }
         }
       }
     });
 
-    // Create notification for team captain
-    await prisma.notification.create({
-      data: {
-        senderId: userId,
-        receiverId: team.captainId,
-        message: "JOIN",
-        metadata: JSON.stringify({
-          teamName: team.name,
-          teamId: team.id
-        })
-      }
-    });
+    // Create notification for team admin
+    const teamAdmin = team.teamMembers.find(tm => tm.role === 'ADMIN');
+    if (teamAdmin) {
+      await prisma.notification.create({
+        data: {
+          senderId: userId,
+          receiverId: teamAdmin.userId,
+          message: "JOIN",
+          metadata: JSON.stringify({
+            teamName: team.name,
+            teamId: team.id
+          })
+        }
+      });
+    }
 
     return res.status(200).json({
       status: 200,
@@ -472,19 +474,95 @@ exports.joinTeam = async (req, res) => {
   }
 };
 
+// Get members by project ID (since members are now associated with projects)
 exports.getTeamMembers = async (req, res) => {
   try {
     const { userId } = req.user;
+    const { projectId } = req.query;
 
+    // If projectId is provided, get project members
+    if (projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true,
+                  username: true,
+                  department: true,
+                  isActive: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!project) {
+        return res.status(404).json({
+          status: 404,
+          message: "Project not found",
+        });
+      }
+
+      const members = project.members.map(member => ({
+        ...member.user,
+        role: member.role,
+        joinedAt: member.joinedAt
+      }));
+
+      return res.status(200).json({
+        status: 200,
+        message: "Project members retrieved successfully",
+        data: members,
+      });
+    }
+
+    // If no projectId, get all team members (admins/owners) and all project members
     const team = await prisma.team.findFirst({
       where: {
-        OR: [
-          { captainId: userId },
-          { members: { some: { id: userId } } }
-        ]
+        teamMembers: { some: { userId: userId } }
       },
       include: {
-        members: true,
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true,
+                username: true,
+                department: true,
+                isActive: true
+              }
+            }
+          }
+        },
+        projects: {
+          include: {
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    imageUrl: true,
+                    username: true,
+                    department: true,
+                    isActive: true
+                  }
+                }
+              }
+            }
+          }
+        }
       },
     });
 
@@ -495,10 +573,37 @@ exports.getTeamMembers = async (req, res) => {
       });
     }
 
+    // Combine team admins and project members (deduplicated)
+    const allMembers = new Map();
+    
+    // Add team admins
+    team.teamMembers.forEach(tm => {
+      allMembers.set(tm.user.id, {
+        ...tm.user,
+        role: 'TEAM_ADMIN',
+        joinedAt: tm.joinedAt
+      });
+    });
+
+    // Add project members
+    team.projects.forEach(project => {
+      project.members.forEach(member => {
+        if (!allMembers.has(member.user.id)) {
+          allMembers.set(member.user.id, {
+            ...member.user,
+            role: member.role,
+            joinedAt: member.joinedAt,
+            projectId: project.id,
+            projectTitle: project.title
+          });
+        }
+      });
+    });
+
     return res.status(200).json({
       status: 200,
       message: "Team members retrieved successfully",
-      data: team.members,
+      data: Array.from(allMembers.values()),
     });
   } catch (error) {
     console.error(error);
@@ -525,15 +630,22 @@ exports.validateInviteCode = async (req, res) => {
         id: true,
         name: true,
         joinCode: true,
-        captain: {
-          select: {
-            name: true,
-            email: true
+        teamMembers: {
+          where: {
+            role: 'ADMIN'
+          },
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
           }
         },
         _count: {
           select: {
-            members: true
+            teamMembers: true
           }
         }
       }
@@ -546,14 +658,16 @@ exports.validateInviteCode = async (req, res) => {
       });
     }
 
+    const admin = team.teamMembers[0]?.user;
+
     return res.status(200).json({
       status: 200,
       message: "Valid invite code",
       data: {
         id: team.id,
         name: team.name,
-        captain: team.captain.name || team.captain.email,
-        memberCount: team._count.members
+        admin: admin?.name || admin?.email || 'Team Admin',
+        memberCount: team._count.teamMembers
       }
     });
   } catch (error) {
@@ -570,15 +684,16 @@ exports.getTeamWorkspaces = async (req, res) => {
   try {
     const userId = req.user?.userId;
 
-    // Find user's team
-    const user = await prisma.user.findUnique({
+    // Find user's team through teamMemberships
+    const userWithTeam = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        team: {
+        teamMemberships: {
           include: {
-            members: {
+            team: {
               select: {
-                id: true
+                id: true,
+                name: true
               }
             }
           }
@@ -586,7 +701,7 @@ exports.getTeamWorkspaces = async (req, res) => {
       }
     });
 
-    if (!user || !user.team) {
+    if (!userWithTeam || !userWithTeam.teamMemberships || userWithTeam.teamMemberships.length === 0) {
       return res.status(404).json({
         status: 404,
         message: "No team found for user",
@@ -594,13 +709,14 @@ exports.getTeamWorkspaces = async (req, res) => {
       });
     }
 
-    const teamMemberIds = user.team.members.map(member => member.id);
+    // Get the first team (users should only have one team membership)
+    const teamId = userWithTeam.teamMemberships[0].team.id;
 
-    // Get all workspaces created by team members
+    // Get all workspaces for the team through projects
     const allTeamWorkspaces = await prisma.workspace.findMany({
       where: {
-        userId: {
-          in: teamMemberIds
+        project: {
+          teamId: teamId
         }
       },
       select: {
@@ -609,21 +725,23 @@ exports.getTeamWorkspaces = async (req, res) => {
         slug: true,
         colorName: true,
         colorValue: true,
-        userId: true,
         createdAt: true,
         members: {
-          where: {
-            userId: userId // Only get current user's access
-          },
           select: {
             userId: true,
-            role: true
+            role: true,
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
           }
         },
-        user: {
+        project: {
           select: {
-            name: true,
-            email: true,
+            id: true,
+            title: true,
             teamId: true
           }
         }
@@ -634,14 +752,19 @@ exports.getTeamWorkspaces = async (req, res) => {
     });
 
     // Add access status to each workspace
-    const workspacesWithAccess = allTeamWorkspaces.map(workspace => ({
-      ...workspace,
-      hasAccess: workspace.members.length > 0,
-      userRole: workspace.members[0]?.role || null,
-      isOwner: workspace.userId === userId,
-      createdBy: workspace.user.name || workspace.user.email,
-      teamId: workspace.user.teamId
-    }));
+    const workspacesWithAccess = allTeamWorkspaces.map(workspace => {
+      const currentUserMember = workspace.members.find(m => m.userId === userId);
+      const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
+      
+      return {
+        ...workspace,
+        hasAccess: !!currentUserMember,
+        userRole: currentUserMember?.role || null,
+        isOwner: currentUserMember?.role === 'ADMIN',
+        createdBy: creatorMember?.user?.name || creatorMember?.user?.email || 'Unknown',
+        teamId: teamId
+      };
+    });
 
     return res.status(200).json({
       status: 200,
@@ -871,33 +994,9 @@ const getTeamMembers = async (req, res) => {
       team = await prisma.team.findUnique({
         where: { id: teamId },
         include: {
-          members: {
+          teamMembers: {
             include: {
-              workspaces: {
-                include: {
-                  workspace: {
-                    select: {
-                      id: true,
-                      title: true,
-                      colorName: true,
-                      colorValue: true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          captain: true
-        }
-      });
-    } else if (userId) {
-      // If no teamId provided, find team through user's membership
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          team: {
-            include: {
-              members: {
+              user: {
                 include: {
                   workspaces: {
                     include: {
@@ -912,15 +1011,93 @@ const getTeamMembers = async (req, res) => {
                     }
                   }
                 }
+              }
+            }
+          },
+          projects: {
+            include: {
+              members: {
+                include: {
+                  user: {
+                    include: {
+                      workspaces: {
+                        include: {
+                          workspace: {
+                            select: {
+                              id: true,
+                              title: true,
+                              colorName: true,
+                              colorValue: true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+    } else if (userId) {
+      // If no teamId provided, find team through user's team membership
+      const teamMembership = await prisma.teamMember.findFirst({
+        where: { userId: userId },
+        include: {
+          team: {
+            include: {
+              teamMembers: {
+                include: {
+                  user: {
+                    include: {
+                      workspaces: {
+                        include: {
+                          workspace: {
+                            select: {
+                              id: true,
+                              title: true,
+                              colorName: true,
+                              colorValue: true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               },
-              captain: true
+              projects: {
+                include: {
+                  members: {
+                    include: {
+                      user: {
+                        include: {
+                          workspaces: {
+                            include: {
+                              workspace: {
+                                select: {
+                                  id: true,
+                                  title: true,
+                                  colorName: true,
+                                  colorValue: true
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
       });
       
       // Get the user's team
-      team = user?.team;
+      team = teamMembership?.team;
     } else {
       return res.status(400).json({
         status: 400,
@@ -935,34 +1112,49 @@ const getTeamMembers = async (req, res) => {
       });
     }
 
-    // Handle case where team has no members
-    if (!team.members || team.members.length === 0) {
-      return res.status(200).json({
-        status: 200,
-        message: "Success",
-        data: {
-          team,
-          members: []
+    // Collect all members from team and projects
+    const allMembers = new Map();
+
+    // Add team members (admins)
+    team.teamMembers?.forEach(tm => {
+      const user = tm.user;
+      allMembers.set(user.id, {
+        ...user,
+        role: 'TEAM_ADMIN',
+        boardAccess: user.workspaces?.map(wu => ({
+          board: wu.workspace,
+          role: wu.role,
+          canEdit: wu.role === 'ADMIN'
+        })) || []
+      });
+    });
+
+    // Add project members
+    team.projects?.forEach(project => {
+      project.members?.forEach(member => {
+        const user = member.user;
+        if (!allMembers.has(user.id)) {
+          allMembers.set(user.id, {
+            ...user,
+            role: member.role,
+            projectId: project.id,
+            projectTitle: project.title,
+            boardAccess: user.workspaces?.map(wu => ({
+              board: wu.workspace,
+              role: wu.role,
+              canEdit: wu.role === 'ADMIN'
+            })) || []
+          });
         }
       });
-    }
-
-    // Format response with workspace access info
-    const membersWithAccess = team.members.map(member => ({
-      ...member,
-      boardAccess: member.workspaces?.map(wu => ({
-        board: wu.workspace,
-        role: wu.role,
-        canEdit: wu.role === 'ADMIN'
-      })) || []
-    }));
+    });
 
     res.status(200).json({
       status: 200,
       message: "Success",
       data: {
         team,
-        members: membersWithAccess
+        members: Array.from(allMembers.values())
       }
     });
   } catch (error) {
@@ -1153,17 +1345,27 @@ const toggleUserStatus = async (req, res) => {
   const requestorId = req.user?.userId;
 
   try {
-    // Check if requestor is team captain or has admin role
+    // Check if requestor is team admin or has admin role
     const requestor = await prisma.user.findUnique({
       where: { id: requestorId },
       include: {
-        captainOf: true
+        teamMemberships: {
+          include: {
+            team: true
+          }
+        }
       }
     });
 
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      include: { team: true }
+      include: { 
+        teamMemberships: {
+          include: {
+            team: true
+          }
+        }
+      }
     });
 
     if (!targetUser) {
@@ -1173,14 +1375,20 @@ const toggleUserStatus = async (req, res) => {
       });
     }
 
-    // Check permissions
+    // Check permissions - requestor must be app ADMIN or team ADMIN of the same team
+    const requestorTeamMembership = requestor.teamMemberships?.[0];
+    const targetTeamMembership = targetUser.teamMemberships?.[0];
+    
     const canModify = requestor.role === 'ADMIN' || 
-                     (requestor.captainOf && requestor.captainOf.id === targetUser.teamId);
+                     (requestorTeamMembership && 
+                      targetTeamMembership &&
+                      requestorTeamMembership.teamId === targetTeamMembership.teamId && 
+                      requestorTeamMembership.role === 'ADMIN');
 
     if (!canModify) {
       return res.status(403).json({
         status: 403,
-        message: "Only team captains or admins can modify user status"
+        message: "Only team admins or app admins can modify user status"
       });
     }
 
@@ -1304,22 +1512,27 @@ const sendWorkspaceInvitation = async (req, res) => {
     try {
       const inviter = await prisma.user.findUnique({
         where: { id: requestorId },
-        select: { name: true, email: true },
-        include: {
-          team: {
-            select: { name: true }
+        select: { 
+          name: true, 
+          email: true,
+          teamMemberships: {
+            include: {
+              team: {
+                select: { name: true }
+              }
+            }
           }
         }
       });
 
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const workspaceUrl = `${frontendUrl}/workspaces/${workspaceId}`;
+      const projectUrl = `${frontendUrl}/projects`;
       
       await emailService.sendWorkspaceInvitation(
         email,
         workspace.title,
-        inviter.team?.name || 'Your Team',
-        workspaceUrl,
+        inviter.teamMemberships?.[0]?.team?.name || 'Your Team',
+        projectUrl,
         inviter.name || inviter.email,
         frontendUrl
       );

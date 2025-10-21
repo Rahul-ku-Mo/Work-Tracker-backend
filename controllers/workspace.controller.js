@@ -3,46 +3,15 @@ const { generateCapitalizedSlug, generateUniqueWorkspaceSlug, generateUniquePref
 
 exports.getWorkspaces = async (req, res) => {
   const { userId } = req.user;
+  const { teamId } = req.query;
 
   try {
-    // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true }
-    });
-
-    // Only admin users can see their own workspaces
-    if (user?.role !== "ADMIN") {
-      return res.status(200).json({
-        status: 200,
-        message: "Non-admin users cannot access personal workspaces",
-        data: []
-      });
-    }
-
-    // Find user's team
-    const team = await prisma.team.findFirst({
-      where: {
-        members: {
-          some: {
-            id: userId
-          }
-        }
-      }
-    });
-    
-    if (!team) {
-      return res.status(200).json({
-        status: 200,
-        message: "No team found",
-        data: []
-      });
-    }
-    
-    // Get workspaces owned by this user (admin)
+    // Get workspaces for the team through project
     const workspaces = await prisma.workspace.findMany({
       where: {
-        userId: userId, // Only workspaces created by this admin user
+        project: {
+          teamId: teamId
+        },
         members: {
           some: {
             userId: userId,
@@ -51,24 +20,41 @@ exports.getWorkspaces = async (req, res) => {
       },
       include: {
         members: {
-          where: { userId: userId },
-          select: { role: true, isFavorite: true }
+          select: { 
+            userId: true,
+            role: true, 
+            isFavorite: true,
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
         },
-        user: {
+        project: {
           select: {
-            name: true,
-            email: true,
+            id: true,
+            title: true,
+            slug: true
           }
         }
       },
+      orderBy: { createdAt: 'desc' }
     });
 
-    const workspacesWithRole = workspaces.map(workspace => ({
-      ...workspace,
-      userRole: workspace.members[0]?.role,
-      isFavorite: workspace.members[0]?.isFavorite,
-      members: undefined // Remove members array from response
-    }));
+    const workspacesWithRole = workspaces.map(workspace => {
+      const currentUserMember = workspace.members.find(m => m.userId === userId);
+      const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
+      
+      return {
+        ...workspace,
+        userRole: currentUserMember?.role,
+        isFavorite: currentUserMember?.isFavorite,
+        creator: creatorMember?.user || null,
+        members: undefined // Remove members array from response
+      };
+    });
 
     res.status(200).json({
       status: 200,
@@ -95,7 +81,7 @@ exports.getWorkspace = async (req, res) => {
     const workspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },
@@ -127,8 +113,11 @@ exports.getWorkspace = async (req, res) => {
             },
           },
         },
-        user: {
+        project: {
           select: {
+            id: true,
+            title: true,
+            slug: true,
             team: {
               select: {
                 id: true,
@@ -146,10 +135,19 @@ exports.getWorkspace = async (req, res) => {
         message: "Workspace not found",
       });
     }
+
+    // Find creator from members with ADMIN role
+    const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
+
+    // Transform the response
+    const transformedWorkspace = {
+      ...workspace,
+      creator: creatorMember?.user || null
+    };
     
     res.status(200).json({
       status: "success",
-      data: workspace,
+      data: transformedWorkspace,
     });
   } catch (error) {
     console.error(error);
@@ -162,45 +160,51 @@ exports.getWorkspace = async (req, res) => {
 
 exports.createWorkspace = async (req, res) => {
   try {
-    const { title, colorId, colorValue, colorName } = req.body;
+    const { title, colorId, colorValue, colorName, projectId } = req.body;
+    const {teamId} = req.params;
+
     const { userId } = req.user;
     
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true, teamId: true },
-    });
-
-    // Check if user is an admin
-    if (user.role !== "ADMIN") {
-      return res.status(403).json({
-        status: 403,
-        message: "Only administrators can create workspaces",
-      });
-    }
-    
-    // Check if user has a team as captain
-    const team = await prisma.team.findFirst({
-      where: {
-        captainId: userId
-      }
-    });
-    
-    if (!team) {
+    if (!teamId) {
       return res.status(400).json({
         status: 400,
-        message: "You need to create a team first",
+        message: "teamId is required",
       });
     }
 
-    // Generate unique slug for the workspace within the team
+    if (!projectId) {
+      return res.status(400).json({
+        status: 400,
+        message: "projectId is required",
+      });
+    }
+
+    // Verify user has access to the specified project
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        teamId: teamId,
+        OR: [
+          { leadId: userId },
+          { members: { some: { userId: userId } } }
+        ]
+      },
+      include: {
+        team: true
+      }
+    });
+
+    if (!project) {
+      return res.status(403).json({
+        status: 403,
+        message: "Project not found or you don't have access to it",
+      });
+    }
+
+    // Generate unique slug for the workspace
     const slug = await generateUniqueWorkspaceSlug(title, async (slug) => {
-      const existing = await prisma.workspace.findFirst({
-        where: { 
-          slug,
-          user: {
-            teamId: team.id
-          }
-        }
+      const existing = await prisma.workspace.findUnique({
+        where: { slug }
       });
       return !!existing;
     });
@@ -222,7 +226,7 @@ exports.createWorkspace = async (req, res) => {
         colorId,
         colorValue,
         colorName,
-        userId,
+        projectId: projectId,
         members: {
           create: {
             userId: userId,
@@ -231,14 +235,41 @@ exports.createWorkspace = async (req, res) => {
         },
       },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        project: {
+          select: {
+            id: true,
+            title: true,
+            slug: true
+          }
+        }
       },
     });
+
+    // Find creator from members with ADMIN role
+    const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
+
+    // Transform response
+    const transformedWorkspace = {
+      ...workspace,
+      creator: creatorMember?.user || null,
+      members: workspace.members
+    };
 
     return res.status(201).json({
       status: 201,
       message: "Success",
-      data: workspace,
+      data: transformedWorkspace,
     });
   } catch (e) {
     console.error(e);
@@ -258,11 +289,11 @@ exports.deleteWorkspace = async (req, res) => {
   }
 
   try {
-    // Check if workspace exists and user is the owner
+    // Check if workspace exists and user has admin access
     const workspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },
@@ -270,6 +301,9 @@ exports.deleteWorkspace = async (req, res) => {
         members: {
           where: { userId: userId },
           select: { role: true }
+        },
+        project: {
+          select: { id: true, leadId: true }
         }
       }
     });
@@ -281,12 +315,14 @@ exports.deleteWorkspace = async (req, res) => {
       });
     }
 
-    // Check if user is admin
+    // Check if user is admin of workspace or project
     const userMember = workspace.members.find(member => true);
-    if (!userMember || userMember.role !== 'ADMIN') {
+    const isProjectLead = workspace.project.leadId === userId;
+    
+    if ((!userMember || userMember.role !== 'ADMIN') && !isProjectLead) {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins can delete the workspace",
+        message: "Only workspace admins or project lead can delete the workspace",
       });
     }
 
@@ -306,7 +342,7 @@ exports.deleteWorkspace = async (req, res) => {
 
 exports.updateWorkspace = async (req, res) => {
   const { teamId, slug } = req.params;
-  const { title, colorId, colorValue, colorName } = req.body;
+  const { title, colorId, colorValue, colorName, projectId } = req.body;
 
   if (!teamId || !slug) {
     return res.status(400).json({
@@ -320,11 +356,11 @@ exports.updateWorkspace = async (req, res) => {
     const existingWorkspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },
-      select: { id: true, title: true, user: { select: { teamId: true } } }
+      select: { id: true, title: true, slug: true, projectId: true }
     });
 
     if (!existingWorkspace) {
@@ -342,9 +378,6 @@ exports.updateWorkspace = async (req, res) => {
         const existing = await prisma.workspace.findFirst({
           where: { 
             slug,
-            user: {
-              teamId: existingWorkspace.user.teamId
-            },
             id: { not: existingWorkspace.id } // Exclude current workspace
           }
         });
@@ -355,15 +388,71 @@ exports.updateWorkspace = async (req, res) => {
       updateData.slug = newSlug;
     }
 
+    // Handle project change if provided
+    if (projectId && projectId !== existingWorkspace.projectId) {
+      const { userId } = req.user;
+      
+      // Verify user has access to the new project
+      const project = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          teamId: teamId,
+          OR: [
+            { leadId: userId },
+            { members: { some: { userId: userId } } }
+          ]
+        }
+      });
+
+      if (!project) {
+        return res.status(403).json({
+          status: 403,
+          message: "Project not found or you don't have access to it",
+        });
+      }
+
+      updateData.projectId = projectId;
+    }
+
     const workspace = await prisma.workspace.update({
       where: { id: existingWorkspace.id },
       data: updateData,
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        project: {
+          select: {
+            id: true,
+            title: true,
+            slug: true
+          }
+        }
+      }
     });
+
+    // Find creator from members with ADMIN role
+    const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
+
+    // Transform response
+    const transformedWorkspace = {
+      ...workspace,
+      creator: creatorMember?.user || null,
+      members: workspace.members
+    };
 
     res.status(200).json({
       status: 200,
       message: "Success",
-      data: workspace,
+      data: transformedWorkspace,
     });
   } catch (error) {
     console.error(error);
@@ -390,10 +479,11 @@ exports.getFavoriteWorkspaces = async (req, res) => {
           where: { userId: userId },
           select: { role: true, isFavorite: true }
         },
-        user: {
+        project: {
           select: {
-            name: true,
-            email: true,
+            id: true,
+            title: true,
+            slug: true
           }
         }
       },
@@ -422,23 +512,20 @@ exports.getFavoriteWorkspaces = async (req, res) => {
 
 // Toggle favorite status for a workspace
 exports.toggleWorkspaceFavorite = async (req, res) => {
-  const { teamId, slug } = req.params;
+  const { workspaceId } = req.params;
   const { userId } = req.user;
 
-  if (!teamId || !slug) {
+  if (!workspaceId) {
     return res.status(400).json({
       status: 400,
-      message: "Both teamId and slug are required",
+      message: "workspaceId is required",
     });
   }
 
   try {
-    const workspace = await prisma.workspace.findFirst({
+    const workspace = await prisma.workspace.findUnique({
       where: { 
-        slug: slug,
-        user: {
-          teamId: teamId
-        }
+        id: parseInt(workspaceId)
       },
       select: { id: true, title: true, colorValue: true, colorName: true }
     });
@@ -453,7 +540,7 @@ exports.toggleWorkspaceFavorite = async (req, res) => {
     // Check if user has access to the workspace
     const workspaceUser = await prisma.workspaceUser.findFirst({
       where: {
-        workspaceId: workspace.id,
+        workspaceId: parseInt(workspaceId),
         userId: userId,
       },
     });
@@ -489,7 +576,7 @@ exports.toggleWorkspaceFavorite = async (req, res) => {
       status: 200,
       message: updatedWorkspaceUser.isFavorite ? "Workspace added to favorites" : "Workspace removed from favorites",
       data: {
-        workspaceId: workspace.id,
+        workspaceId: parseInt(workspaceId),
         isFavorite: updatedWorkspaceUser.isFavorite,
         workspace: updatedWorkspaceUser.workspace
       },
@@ -498,4 +585,4 @@ exports.toggleWorkspaceFavorite = async (req, res) => {
     console.error(error);
     res.status(500).json({ status: 500, message: "Internal Server Error" });
   }
-}; 
+};
