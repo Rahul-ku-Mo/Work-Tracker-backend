@@ -16,7 +16,7 @@ const checkWorkspaceAccess = async (req, res, next) => {
     const workspace = await prisma.workspace.findFirst({
       where: { 
         slug: slug,
-        user: {
+        project: {
           teamId: teamId
         }
       },

@@ -15,18 +15,18 @@ async function testMilestoneCompletion() {
         milestones: [
           {
             id: 'milestone-1',
-            milestoneValue: 'Setup development environment',
-            isCompletedMilestone: false
+            title: 'Setup development environment',
+            status: 'INCOMPLETE'
           },
           {
             id: 'milestone-2',
-            milestoneValue: 'Implement core features',
-            isCompletedMilestone: false
+            title: 'Implement core features',
+            status: 'INCOMPLETE'
           },
           {
             id: 'milestone-3',
-            milestoneValue: 'Testing and deployment',
-            isCompletedMilestone: false
+            title: 'Testing and deployment',
+            status: 'INCOMPLETE'
           }
         ]
       }
@@ -42,7 +42,7 @@ async function testMilestoneCompletion() {
       if (milestone.id === 'milestone-1') {
         return {
           ...milestone,
-          isCompletedMilestone: true
+          status: 'COMPLETE'
         };
       }
       return milestone;

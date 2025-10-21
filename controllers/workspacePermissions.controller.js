@@ -7,15 +7,31 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
   const { userId } = req.user;
 
   try {
-    // Get the workspace to find the team
+    // Get the workspace to find the team through project
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       include: {
-        user: {
+        project: {
           include: {
             team: {
               include: {
-                members: {
+                teamMembers: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        imageUrl: true,
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            members: {
+              include: {
+                user: {
                   select: {
                     id: true,
                     name: true,
@@ -55,8 +71,21 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
     // Create a map of current members for quick lookup
     const currentMemberIds = new Set(workspaceMembers.map(member => member.user.id));
 
-    // Get all team members and add access status
-    const teamMembersWithAccess = workspace.user.team.members.map(member => {
+    // Collect all members from team and project
+    const allMembers = new Map();
+    
+    // Add team admins
+    workspace.project.team.teamMembers?.forEach(tm => {
+      allMembers.set(tm.user.id, tm.user);
+    });
+    
+    // Add project members
+    workspace.project.members?.forEach(pm => {
+      allMembers.set(pm.user.id, pm.user);
+    });
+
+    // Get all team/project members and add access status
+    const teamMembersWithAccess = Array.from(allMembers.values()).map(member => {
       const workspaceMember = workspaceMembers.find(wm => wm.user.id === member.id);
       return {
         ...member,
@@ -91,12 +120,24 @@ exports.grantWorkspaceAccess = async (req, res) => {
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       include: {
-        user: {
+        members: {
+          where: { userId: userId },
+          select: { role: true }
+        },
+        project: {
           include: {
             team: {
               include: {
-                members: {
-                  where: { id: memberId },
+                teamMembers: {
+                  where: { userId: userId },
+                  select: { role: true }
+                }
+              }
+            },
+            members: {
+              where: { userId: memberId },
+              include: {
+                user: {
                   select: {
                     id: true,
                     name: true,
@@ -117,23 +158,32 @@ exports.grantWorkspaceAccess = async (req, res) => {
       });
     }
 
-    // Check if the requesting user is the workspace owner or team captain
-    const isOwner = workspace.userId === userId;
-    const isCaptain = workspace.user.team.captainId === userId;
+    // Check if the requesting user is the workspace ADMIN or team ADMIN
+    const workspaceUserRole = workspace.members[0]?.role;
+    const teamUserRole = workspace.project.team.teamMembers[0]?.role;
+    const isWorkspaceAdmin = workspaceUserRole === 'ADMIN';
+    const isTeamAdmin = teamUserRole === 'ADMIN';
 
-    if (!isOwner && !isCaptain) {
+    if (!isWorkspaceAdmin && !isTeamAdmin) {
       return res.status(403).json({
         status: 403,
         message: "You don't have permission to grant workspace access"
       });
     }
 
-    // Check if the member exists in the team
-    const member = workspace.user.team.members[0];
-    if (!member) {
+    // Check if the member exists in the project or is a team admin
+    const isProjectMember = workspace.project.members.length > 0;
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: workspace.project.teamId,
+        userId: memberId
+      }
+    });
+    
+    if (!isProjectMember && !teamMember) {
       return res.status(404).json({
         status: 404,
-        message: "Team member not found"
+        message: "User is not a member of this project or team"
       });
     }
 
@@ -200,7 +250,7 @@ exports.grantWorkspaceAccess = async (req, res) => {
         await emailService.sendWorkspaceInvitation(
           member.email,
           workspace.title,
-          workspace.user.team.name,
+          workspace.project.team.name,
           workspaceUrl,
           granter.name || granter.email,
           frontendUrl
@@ -243,10 +293,11 @@ exports.getUserAccessibleWorkspaces = async (req, res) => {
           where: { userId: userId },
           select: { role: true }
         },
-        user: {
+        project: {
           select: {
-            name: true,
-            email: true,
+            id: true,
+            title: true,
+            slug: true
           }
         }
       },

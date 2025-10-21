@@ -1,30 +1,30 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-// Get all labels for a team
-const getTeamLabels = async (req, res) => {
+// Get all labels for a workspace
+const getWorkspaceLabels = async (req, res) => {
   try {
-    const { teamId } = req.params;
+    const { workspaceId } = req.params;
     const { userId } = req.user;
 
-    // Verify user is a member of the team
-    const teamMember = await prisma.user.findFirst({
+    // Verify user has access to the workspace
+    const workspaceAccess = await prisma.workspaceUser.findFirst({
       where: {
-        id: userId,
-        teamId: teamId,
+        workspaceId: parseInt(workspaceId),
+        userId: userId,
       },
     });
 
-    if (!teamMember) {
+    if (!workspaceAccess) {
       return res.status(403).json({
         status: 403,
-        message: "Access denied. You are not a member of this team.",
+        message: "Access denied. You are not a member of this workspace.",
       });
     }
 
     const labels = await prisma.label.findMany({
       where: {
-        teamId: teamId,
+        workspaceId: parseInt(workspaceId),
       },
       orderBy: {
         name: "asc",
@@ -33,11 +33,11 @@ const getTeamLabels = async (req, res) => {
 
     res.status(200).json({
       status: 200,
-      message: "Team labels retrieved successfully",
+      message: "Workspace labels retrieved successfully",
       data: labels,
     });
   } catch (error) {
-    console.error("Error fetching team labels:", error);
+    console.error("Error fetching workspace labels:", error);
     res.status(500).json({
       status: 500,
       message: "Internal server error",
@@ -46,10 +46,10 @@ const getTeamLabels = async (req, res) => {
   }
 };
 
-// Create a new label for a team
+// Create a new label for a workspace
 const createLabel = async (req, res) => {
   try {
-    const { teamId } = req.params;
+    const { workspaceId } = req.params;
     const { name, color } = req.body;
     const { userId } = req.user;
 
@@ -60,33 +60,33 @@ const createLabel = async (req, res) => {
       });
     }
 
-    // Verify user is a member of the team
-    const teamMember = await prisma.user.findFirst({
+    // Verify user has access to the workspace
+    const workspaceAccess = await prisma.workspaceUser.findFirst({
       where: {
-        id: userId,
-        teamId: teamId,
+        workspaceId: parseInt(workspaceId),
+        userId: userId,
       },
     });
 
-    if (!teamMember) {
+    if (!workspaceAccess) {
       return res.status(403).json({
         status: 403,
-        message: "Access denied. You are not a member of this team.",
+        message: "Access denied. You are not a member of this workspace.",
       });
     }
 
-    // Check if label already exists for this team
+    // Check if label already exists for this workspace
     const existingLabel = await prisma.label.findFirst({
       where: {
         name: name.trim(),
-        teamId: teamId,
+        workspaceId: parseInt(workspaceId),
       },
     });
 
     if (existingLabel) {
       return res.status(400).json({
         status: 400,
-        message: "A label with this name already exists for this team",
+        message: "A label with this name already exists for this workspace",
       });
     }
 
@@ -94,7 +94,7 @@ const createLabel = async (req, res) => {
       data: {
         name: name.trim(),
         color: color || null,
-        teamId: teamId,
+        workspaceId: parseInt(workspaceId),
       },
     });
 
@@ -120,10 +120,10 @@ const updateLabel = async (req, res) => {
     const { name, color } = req.body;
     const { userId } = req.user;
 
-    // Find the label and verify team membership
+    // Find the label and verify workspace access
     const label = await prisma.label.findUnique({
       where: { id: labelId },
-      include: { team: true },
+      include: { workspace: true },
     });
 
     if (!label) {
@@ -133,18 +133,18 @@ const updateLabel = async (req, res) => {
       });
     }
 
-    // Verify user is a member of the team
-    const teamMember = await prisma.user.findFirst({
+    // Verify user has access to the workspace
+    const workspaceAccess = await prisma.workspaceUser.findFirst({
       where: {
-        id: userId,
-        teamId: label.teamId,
+        workspaceId: label.workspaceId,
+        userId: userId,
       },
     });
 
-    if (!teamMember) {
+    if (!workspaceAccess) {
       return res.status(403).json({
         status: 403,
-        message: "Access denied. You are not a member of this team.",
+        message: "Access denied. You are not a member of this workspace.",
       });
     }
 
@@ -153,7 +153,7 @@ const updateLabel = async (req, res) => {
       const existingLabel = await prisma.label.findFirst({
         where: {
           name: name.trim(),
-          teamId: label.teamId,
+          workspaceId: label.workspaceId,
           id: { not: labelId },
         },
       });
@@ -161,7 +161,7 @@ const updateLabel = async (req, res) => {
       if (existingLabel) {
         return res.status(400).json({
           status: 400,
-          message: "A label with this name already exists for this team",
+          message: "A label with this name already exists for this workspace",
         });
       }
     }
@@ -195,11 +195,11 @@ const deleteLabel = async (req, res) => {
     const { labelId } = req.params;
     const { userId } = req.user;
 
-    // Find the label and verify team membership
+    // Find the label and verify workspace access
     const label = await prisma.label.findUnique({
       where: { id: labelId },
       include: { 
-        team: true,
+        workspace: true,
         _count: {
           select: { cards: true }
         }
@@ -213,18 +213,18 @@ const deleteLabel = async (req, res) => {
       });
     }
 
-    // Verify user is a member of the team
-    const teamMember = await prisma.user.findFirst({
+    // Verify user has access to the workspace
+    const workspaceAccess = await prisma.workspaceUser.findFirst({
       where: {
-        id: userId,
-        teamId: label.teamId,
+        workspaceId: label.workspaceId,
+        userId: userId,
       },
     });
 
-    if (!teamMember) {
+    if (!workspaceAccess) {
       return res.status(403).json({
         status: 403,
-        message: "Access denied. You are not a member of this team.",
+        message: "Access denied. You are not a member of this workspace.",
       });
     }
 
@@ -254,71 +254,9 @@ const deleteLabel = async (req, res) => {
   }
 };
 
-// Get labels for cards in a workspace (for filtering/display purposes)
-const getWorkspaceLabels = async (req, res) => {
-  try {
-    const { workspaceId } = req.params;
-    const { userId } = req.user;
-
-    // Verify user has access to the workspace
-    const workspaceAccess = await prisma.workspaceUser.findFirst({
-      where: {
-        workspaceId: parseInt(workspaceId),
-        userId: userId,
-      },
-      include: {
-        workspace: true,
-      },
-    });
-
-    if (!workspaceAccess) {
-      return res.status(403).json({
-        status: 403,
-        message: "Access denied. You are not a member of this workspace.",
-      });
-    }
-
-    // Get all unique labels used in cards within this workspace
-    const cards = await prisma.card.findMany({
-      where: {
-        column: {
-          workspaceId: parseInt(workspaceId),
-        },
-      },
-      include: {
-        labels: true,
-      },
-    });
-
-    // Extract unique labels
-    const labelsMap = new Map();
-    cards.forEach(card => {
-      card.labels.forEach(label => {
-        labelsMap.set(label.id, label);
-      });
-    });
-
-    const labels = Array.from(labelsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-
-    res.status(200).json({
-      status: 200,
-      message: "Workspace labels retrieved successfully",
-      data: labels,
-    });
-  } catch (error) {
-    console.error("Error fetching workspace labels:", error);
-    res.status(500).json({
-      status: 500,
-      message: "Internal server error",
-      error: error.message,
-    });
-  }
-};
-
 module.exports = {
-  getTeamLabels,
+  getWorkspaceLabels,
   createLabel,
   updateLabel,
   deleteLabel,
-  getWorkspaceLabels,
 };

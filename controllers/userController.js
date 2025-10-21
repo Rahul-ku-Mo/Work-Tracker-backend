@@ -97,8 +97,20 @@ exports.getUser = async (req, res) => {
         company: true,
         role: true,
         isPaidUser: true,
-        teamId: true,
         updatedAt: true,
+        teamMemberships: {
+          select: {
+            teamId: true,
+            role: true,
+            team: {
+              select: {
+                id: true,
+                name: true,
+                teamImageUrl: true,
+              },
+            },
+          },
+        },
         workspaces: {
           include: {
             workspace: {

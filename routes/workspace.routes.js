@@ -11,7 +11,7 @@ const router = express.Router();
 router
   .route("/team/:teamId")
   .get(workspaceController.getWorkspaces)
-  .post(requireWithinLimits('projects'), workspaceController.createWorkspace);
+  .post(requireWithinLimits('workspacesPerProject'), workspaceController.createWorkspace);
 
 // Favorites routes
 router
@@ -27,13 +27,14 @@ router.use("/team/:teamId/:slug", checkWorkspaceAccess);
 
 router
   .route("/team/:teamId/:slug")
-  .get(workspaceController.getWorkspace);
+  .get(workspaceController.getWorkspace)
+  .put(workspaceController.updateWorkspace)
+  .delete(workspaceController.deleteWorkspace);
 
 router
   .route("/:teamId/:slug/members")
   .get(workspaceUserController.getWorkspaceMembers)
   .post(workspaceUserController.inviteUserToWorkspace);
-
 
 router
   .route("/:teamId/:slug/favorite")

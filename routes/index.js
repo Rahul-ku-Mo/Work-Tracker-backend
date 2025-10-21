@@ -8,7 +8,7 @@ const commentRouter = require("./commentRoutes");
 const columnRouter = require("./column.routes");
 const cardRouter = require("./cardRoutes");
 const notificationRouter = require("./notification.routes");
-const teamRouter = require("./teamRoutes");
+const teamRouter = require("./team.routes");
 const aiRouter = require("./ai.routes");
 const { authenticateToken } = require("../utils/validation");
 const userController = require("../controllers/userController");
@@ -21,6 +21,7 @@ const notesRouter = require("./notes.routes");
 const feedbackRouter = require("./feedback.routes");
 const projectRouter = require("./project.routes");
 const labelRouter = require("./label.routes");
+const milestoneRouter = require("./milestone.routes");
 
 // Auth routes
 router.use("/", authRouter);
@@ -57,5 +58,6 @@ router.use("/time-entries", timeEntryRouter);
 router.use("/notes", notesRouter);
 router.use("/projects", projectRouter);
 router.use("/labels", labelRouter);
+router.use("/milestones", milestoneRouter);
 
 module.exports = router;

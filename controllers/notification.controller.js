@@ -219,7 +219,7 @@ class NotificationController {
             senderId: authorId,
             type: 'mention',
             title: 'You were mentioned',
-            message: 'MENTION',
+            message: `You were mentioned in a ${contentType}`,
             contentType,
             contentId: contentId.toString()
           }

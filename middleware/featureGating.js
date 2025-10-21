@@ -7,9 +7,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 // Feature limits for each plan
 const PLAN_LIMITS = {
   free: {
-    projects: 5,
+    projects: 2, // 1-2 projects for free users
+    workspacesPerProject: 5, // 5 workspaces per project
     teamMembers: 15,
-    tasksPerProject: 100,
+    cardsPerWorkspace: 100, // 100 cards per workspace
     activityHistoryDays: 7,
     storageGB: 1,
     trialDays: 14,
@@ -20,9 +21,10 @@ const PLAN_LIMITS = {
     prioritySupport: false
   },
   pro: {
-    projects: 15,
+    projects: 10, // 10 projects for pro users
+    workspacesPerProject: 15, // 15 workspaces per project
     teamMembers: 100,
-    tasksPerProject: -1, // unlimited
+    cardsPerWorkspace: -1, // unlimited cards per workspace
     activityHistoryDays: 30,
     storageGB: 10,
     trialDays: -1, // no trial limit
@@ -32,10 +34,25 @@ const PLAN_LIMITS = {
     aiFeatures: true,
     prioritySupport: false
   },
+  team: {
+    projects: 25, // 25 projects for team users
+    workspacesPerProject: 30, // 30 workspaces per project
+    teamMembers: 250,
+    cardsPerWorkspace: -1, // unlimited cards per workspace
+    activityHistoryDays: 90,
+    storageGB: 50,
+    trialDays: -1, // no trial limit
+    analytics: true,
+    timeTracking: true,
+    customFields: true,
+    aiFeatures: true,
+    prioritySupport: true
+  },
   enterprise: {
-    projects: -1, // unlimited
-    teamMembers: -1, // unlimited
-    tasksPerProject: -1, // unlimited
+    projects: -1, // unlimited projects
+    workspacesPerProject: -1, // unlimited workspaces per project
+    teamMembers: -1, // unlimited team members
+    cardsPerWorkspace: -1, // unlimited cards per workspace
     activityHistoryDays: -1, // unlimited
     storageGB: 100,
     trialDays: -1, // no trial limit
@@ -159,7 +176,7 @@ const getStorageUsage = async (userId) => {
 };
 
 // Check if user is within limits
-const isWithinLimits = async (userId, plan, limitType) => {
+const isWithinLimits = async (userId, plan, limitType, contextData = {}) => {
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
   const limit = limits[limitType];
   
@@ -172,34 +189,93 @@ const isWithinLimits = async (userId, plan, limitType) => {
   try {
     switch (limitType) {
       case 'projects':
-        const projectCount = await prisma.workspace.count({
-          where: { userId }
+        // Count projects where user is the lead
+        const projectCount = await prisma.project.count({
+          where: {
+            leadId: userId
+          }
         });
+        console.log("project-count::", projectCount);
         currentUsage = projectCount;
         break;
         
+      case 'workspacesPerProject':
+        // Check workspaces for a specific project
+        if (!contextData.projectId) {
+          console.error('projectId is required for workspacesPerProject limit check');
+          return false;
+        }
+        
+        const workspaceCount = await prisma.workspace.count({
+          where: {
+            projectId: contextData.projectId
+          }
+        });
+        console.log(`workspace-count for project ${contextData.projectId}::`, workspaceCount);
+        currentUsage = workspaceCount;
+        break;
+        
       case 'teamMembers':
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
+        // Count all unique users across team memberships and project memberships
+        const teamMembership = await prisma.teamMember.findFirst({
+          where: { userId: userId },
           include: {
             team: {
               include: {
-                members: true
+                teamMembers: true,
+                projects: {
+                  include: {
+                    members: true
+                  }
+                }
               }
             }
           }
         });
-        currentUsage = user?.team?.members?.length || 0;
+        
+        if (teamMembership?.team) {
+          const uniqueMembers = new Set();
+          
+          // Add team admins
+          teamMembership.team.teamMembers.forEach(tm => {
+            uniqueMembers.add(tm.userId);
+          });
+          
+          // Add project members
+          teamMembership.team.projects.forEach(project => {
+            project.members.forEach(pm => {
+              uniqueMembers.add(pm.userId);
+            });
+          });
+          
+          currentUsage = uniqueMembers.size;
+        } else {
+          currentUsage = 0;
+        }
+        break;
+        
+      case 'cardsPerWorkspace':
+        // Check cards for a specific workspace
+        if (!contextData.workspaceId) {
+          console.error('workspaceId is required for cardsPerWorkspace limit check');
+          return false;
+        }
+        
+        const cardCount = await prisma.card.count({
+          where: {
+            column: {
+              workspaceId: contextData.workspaceId
+            }
+          }
+        });
+        console.log(`card-count for workspace ${contextData.workspaceId}::`, cardCount);
+        currentUsage = cardCount;
         break;
         
       case 'storageGB':
         // Use actual storage usage from ImageUpload table
         currentUsage = await getStorageUsage(userId);
         break;
-        
-      case 'tasksPerProject':
-        // This would be checked per project
-        return true; // Implement per-project check separately
         
       default:
         return true;
@@ -253,7 +329,8 @@ const requireFeature = (featureName) => {
 const requireWithinLimits = (limitType) => {
   return async (req, res, next) => {
     try {
-      const userId = req.user?.userId || req.user?.id;
+      const userId = req.user?.userId
+      
       
       if (!userId) {
         return res.status(401).json({
@@ -263,8 +340,26 @@ const requireWithinLimits = (limitType) => {
       }
 
       const plan = await getUserPlan(userId);
-      const withinLimits = await isWithinLimits(userId, plan, limitType);
       
+      // Extract context data based on limit type
+      const contextData = {};
+      if (limitType === 'workspacesPerProject') {
+        // For workspace creation, get projectId from request body
+        contextData.projectId = req.body.projectId;
+      } else if (limitType === 'cardsPerWorkspace') {
+        // For card creation, get workspaceId from column
+        if (req.body.columnId) {
+          // Need to fetch workspace from column
+          const column = await prisma.column.findUnique({
+            where: { id: req.body.columnId },
+            select: { workspaceId: true }
+          });
+          contextData.workspaceId = column?.workspaceId;
+        }
+      }
+      
+      const withinLimits = await isWithinLimits(userId, plan, limitType, contextData);
+
       if (!withinLimits) {
         const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
         return res.status(403).json({
@@ -295,24 +390,38 @@ const getUsageStats = async (userId) => {
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
     
     // Get current usage
-    const [projectCount, user, taskCount] = await Promise.all([
-      prisma.workspace.count({ where: { userId } }),
-      prisma.user.findUnique({
-        where: { id: userId },
+    const [projectCount, teamMembership, taskCount] = await Promise.all([
+      // Count projects where user is lead
+      prisma.project.count({
+        where: {
+          leadId: userId
+        }
+      }),
+      prisma.teamMember.findFirst({
+        where: { userId: userId },
         include: {
           team: {
             include: {
-              members: true
+              teamMembers: true,
+              projects: {
+                include: {
+                  members: true
+                }
+              }
             }
           }
         }
       }),
-      // Get task count across all user's projects
+      // Get task count across all user's workspaces
       prisma.card.count({
         where: {
           column: {
             workspace: {
-              userId: userId
+              members: {
+                some: {
+                  userId: userId
+                }
+              }
             }
           }
         }
@@ -322,14 +431,38 @@ const getUsageStats = async (userId) => {
     // Get actual storage usage from ImageUpload table
     const storageUsed = await getStorageUsage(userId);
 
-    const teamMemberCount = user?.team?.members?.length || 0;
+    // Count all unique team members (team admins + project members)
+    let teamMemberCount = 0;
+    if (teamMembership?.team) {
+      const uniqueMembers = new Set();
+      
+      // Add team admins
+      teamMembership.team.teamMembers.forEach(tm => {
+        uniqueMembers.add(tm.userId);
+      });
+      
+      // Add project members
+      teamMembership.team.projects.forEach(project => {
+        project.members.forEach(pm => {
+          uniqueMembers.add(pm.userId);
+        });
+      });
+      
+      teamMemberCount = uniqueMembers.size;
+    }
     
-    // Calculate max tasks per project
-    let maxTasksPerProject = 0;
+    // Calculate max cards per workspace
+    let maxCardsPerWorkspace = 0;
     if (projectCount > 0) {
       try {
-        const projectTaskCounts = await prisma.workspace.findMany({
-          where: { userId },
+        const workspaceCardCounts = await prisma.workspace.findMany({
+          where: { 
+            members: {
+              some: {
+                userId: userId
+              }
+            }
+          },
           include: {
             columns: {
               include: {
@@ -341,12 +474,12 @@ const getUsageStats = async (userId) => {
           }
         });
         
-        maxTasksPerProject = Math.max(...projectTaskCounts.map(project => 
-          project.columns.reduce((sum, column) => sum + column._count.cards, 0)
+        maxCardsPerWorkspace = Math.max(...workspaceCardCounts.map(workspace => 
+          workspace.columns.reduce((sum, column) => sum + column._count.cards, 0)
         ), 0);
       } catch (error) {
-        console.error('Error calculating max tasks per project:', error);
-        maxTasksPerProject = 0;
+        console.error('Error calculating max cards per workspace:', error);
+        maxCardsPerWorkspace = 0;
       }
     }
     
@@ -357,17 +490,21 @@ const getUsageStats = async (userId) => {
           current: projectCount,
           limit: limits.projects === -1 ? null : limits.projects
         },
+        workspacesPerProject: {
+          current: null, // This would be calculated per project
+          limit: limits.workspacesPerProject === -1 ? null : limits.workspacesPerProject
+        },
         teamMembers: {
           current: teamMemberCount,
           limit: limits.teamMembers === -1 ? null : limits.teamMembers
         },
-        tasksPerProject: {
-          current: maxTasksPerProject,
-          limit: limits.tasksPerProject === -1 ? null : limits.tasksPerProject
+        cardsPerWorkspace: {
+          current: maxCardsPerWorkspace,
+          limit: limits.cardsPerWorkspace === -1 ? null : limits.cardsPerWorkspace
         },
-        totalTasks: {
+        totalCards: {
           current: taskCount,
-          limit: null // Total tasks are usually unlimited
+          limit: null // Total cards are usually unlimited
         },
         storageGB: {
           current: Math.round(storageUsed * 100) / 100, // Round to 2 decimals (already in GB)
