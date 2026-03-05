@@ -20,6 +20,7 @@ const billingRouter = require("./billing.routes");
 const notesRouter = require("./notes.routes");
 const feedbackRouter = require("./feedback.routes");
 const projectRouter = require("./project.routes");
+const projectPermissionsRouter = require("./projectPermissions.routes");
 const labelRouter = require("./label.routes");
 const milestoneRouter = require("./milestone.routes");
 
@@ -57,6 +58,7 @@ router.use("/analytics", analyticsRouter);
 router.use("/time-entries", timeEntryRouter);
 router.use("/notes", notesRouter);
 router.use("/projects", projectRouter);
+router.use("/project-permissions", projectPermissionsRouter);
 router.use("/labels", labelRouter);
 router.use("/milestones", milestoneRouter);
 

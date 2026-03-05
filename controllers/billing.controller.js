@@ -52,18 +52,36 @@ class BillingController {
     });
   }
 
-  // Get user's subscription status with access control
+  // Get team's subscription status with admin-only access control
   async getSubscriptionStatus(req, res) {
     try {
       const userId = req.user.userId;
-      const user = await this.getUserWithSubscription(userId);
+      
+      // Check if user is a team admin
+      const teamMember = await prisma.teamMember.findFirst({
+        where: {
+          userId: userId,
+          role: "ADMIN"
+        },
+        include: {
+          team: {
+            include: {
+              teamSubscription: true
+            }
+          }
+        }
+      });
 
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
+      if (!teamMember) {
+        return res.status(403).json({ 
+          error: "Access denied. Only team administrators can view subscription information." 
+        });
       }
 
-      // For users without subscription, return free plan
-      if (!user.subscription) {
+      const team = teamMember.team;
+
+      // For teams without subscription, return free plan
+      if (!team.teamSubscription) {
         return res.json({
           plan: "free",
           status: "active",
@@ -71,22 +89,26 @@ class BillingController {
           currentPeriodEnd: null,
           cancelAtPeriodEnd: false,
           accessRestricted: false,
+          teamId: team.id,
+          teamName: team.name
         });
       }
 
       const planMapping = this.getPlanMapping();
-      const isAccessRestricted = user.subscription.status === "past_due" || 
-                                user.subscription.status === "canceled";
+      const isAccessRestricted = team.teamSubscription.status === "past_due" || 
+                                team.teamSubscription.status === "canceled";
 
       res.json({
-        plan: planMapping[user.subscription.plan] || "free",
-        status: user.subscription.status || "active",
-        currentPeriodStart: user.subscription.currentPeriodStart,
-        currentPeriodEnd: user.subscription.currentPeriodEnd,
-        cancelAtPeriodEnd: user.subscription.cancelAtPeriodEnd || false,
-        subscriptionId: user.subscription.paddleSubscriptionId,
+        plan: planMapping[team.teamSubscription.plan] || "free",
+        status: team.teamSubscription.status || "active",
+        currentPeriodStart: team.teamSubscription.currentPeriodStart,
+        currentPeriodEnd: team.teamSubscription.currentPeriodEnd,
+        cancelAtPeriodEnd: team.teamSubscription.cancelAtPeriodEnd || false,
+        subscriptionId: team.teamSubscription.paddleSubscriptionId,
         accessRestricted: isAccessRestricted,
-        trialExpired: user.subscription.status === "past_due" && !user.isPaidUser,
+        trialExpired: team.teamSubscription.status === "past_due",
+        teamId: team.id,
+        teamName: team.name
       });
     } catch (error) {
       console.error("Error getting subscription status:", error);
@@ -94,29 +116,54 @@ class BillingController {
     }
   }
 
-  // Cancel subscription
+  // Cancel subscription (admin-only)
   async cancelSubscription(req, res) {
     try {
       const userId = req.user.userId;
-      const user = await this.getUserWithSubscription(userId);
+      
+      // Check if user is a team admin
+      const teamMember = await prisma.teamMember.findFirst({
+        where: {
+          userId: userId,
+          role: "ADMIN"
+        },
+        include: {
+          team: {
+            include: {
+              teamSubscription: true
+            }
+          }
+        }
+      });
 
+      if (!teamMember) {
+        return res.status(403).json({ 
+          error: "Access denied. Only team administrators can manage subscriptions." 
+        });
+      }
+
+      const team = teamMember.team;
+
+      if (!team.teamSubscription) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
       // If subscription ID is missing, try to fetch it from Paddle
-      if (!user.subscription?.paddleSubscriptionId && user.paddleCustomerId) {
+      if (!team.teamSubscription?.paddleSubscriptionId && team.paddleCustomerId) {
         console.log("Missing subscription ID for cancellation, attempting to fetch from Paddle...");
         try {
-          const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(user.paddleCustomerId);
+          const paddleSubscription = await paddleService.getLatestSubscriptionForCustomer(team.paddleCustomerId);
           if (paddleSubscription) {
             // Update the subscription with the found ID
-            await prisma.subscription.update({
-              where: { userId },
+            await prisma.teamSubscription.update({
+              where: { teamId: team.id },
               data: { paddleSubscriptionId: paddleSubscription.id },
             });
-            // Refresh user data
-            const updatedUser = await prisma.user.findUnique({
-              where: { id: userId },
-              include: { subscription: true },
+            // Refresh team data
+            const updatedTeam = await prisma.team.findUnique({
+              where: { id: team.id },
+              include: { teamSubscription: true },
             });
-            user.subscription = updatedUser.subscription;
+            team.teamSubscription = updatedTeam.teamSubscription;
             console.log(`Found and updated subscription ID for cancellation: ${paddleSubscription.id}`);
           }
         } catch (error) {
@@ -124,17 +171,17 @@ class BillingController {
         }
       }
 
-      if (!user?.subscription?.paddleSubscriptionId) {
+      if (!team?.teamSubscription?.paddleSubscriptionId) {
         return res.status(400).json({ error: "No active subscription found" });
       }
 
       await paddleService.cancelSubscription(
-        user.subscription.paddleSubscriptionId
+        team.teamSubscription.paddleSubscriptionId
       );
 
       // Update local subscription status
-      await prisma.subscription.update({
-        where: { userId },
+      await prisma.teamSubscription.update({
+        where: { teamId: team.id },
         data: { cancelAtPeriodEnd: true },
       });
 

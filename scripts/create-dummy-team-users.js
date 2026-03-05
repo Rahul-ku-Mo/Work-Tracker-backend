@@ -122,7 +122,7 @@ async function createDummyUsers() {
     // Get the first team (assuming there's at least one team)
     const team = await prisma.team.findFirst({
       include: {
-        members: true
+        teamMembers: true
       }
     });
 
@@ -132,7 +132,7 @@ async function createDummyUsers() {
     }
 
     console.log(`📋 Found team: ${team.name} (ID: ${team.id})`);
-    console.log(`👥 Current members: ${team.members.length}\n`);
+    console.log(`👥 Current members: ${team.teamMembers.length}\n`);
 
     const createdUsers = [];
     const failedUsers = [];
@@ -160,18 +160,16 @@ async function createDummyUsers() {
           data: {
             ...userData,
             password: hashedPassword,
-            isActive: true,
-            teamId: team.id
+            isActive: true
           }
         });
 
-        // Add user to team
-        await prisma.team.update({
-          where: { id: team.id },
+        // Create TeamMember record to associate user with team
+        await prisma.teamMember.create({
           data: {
-            members: {
-              connect: { id: user.id }
-            }
+            teamId: team.id,
+            userId: user.id,
+            role: 'MEMBER'
           }
         });
 
@@ -188,7 +186,7 @@ async function createDummyUsers() {
     console.log('\n📊 Summary:');
     console.log(`✅ Successfully created: ${createdUsers.length} users`);
     console.log(`❌ Failed to create: ${failedUsers.length} users`);
-    console.log(`👥 Total team members now: ${team.members.length + createdUsers.length}`);
+    console.log(`👥 Total team members now: ${team.teamMembers.length + createdUsers.length}`);
 
     if (createdUsers.length > 0) {
       console.log('\n👤 Created users:');

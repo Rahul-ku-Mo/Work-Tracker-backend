@@ -241,48 +241,51 @@ async function create12DummyUsers() {
         console.log(`✅ Created admin user: ${adminUser.name}`);
       }
 
-      // Create team with admin as captain
+      // Create team
       team = await prisma.team.create({
         data: {
           name: "PulseBoard Development Team",
-          captainId: adminUser.id,
-          teamImageUrl: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=300",
-          members: {
-            connect: { id: adminUser.id }
-          }
+          teamImageUrl: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=300"
         },
         include: {
-          members: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              isActive: true
+          teamMembers: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  role: true,
+                  isActive: true
+                }
+              }
             }
           }
         }
       });
 
-      // Update admin user with teamId
-      await prisma.user.update({
-        where: { id: adminUser.id },
-        data: { teamId: team.id }
+      // Add admin as team member
+      await prisma.teamMember.create({
+        data: {
+          teamId: team.id,
+          userId: adminUser.id,
+          role: 'ADMIN'
+        }
       });
 
-      console.log(`✅ Created team: ${team.name} with captain: ${adminUser.name}`);
+      console.log(`✅ Created team: ${team.name} with admin: ${adminUser.name}`);
     } else {
       console.log(`📋 Found existing team: ${team.name} (ID: ${team.id})`);
     }
 
-    console.log(`👥 Current team members: ${team.members.length}\n`);
+    console.log(`👥 Current team members: ${team.teamMembers.length}\n`);
 
     const createdUsers = [];
     const skippedUsers = [];
     const failedUsers = [];
 
     // Create remaining users (skip admin if we already processed it)
-    const usersToCreate = team.members.length === 1 ? dummyUsers.slice(1) : dummyUsers;
+    const usersToCreate = team.teamMembers.length === 1 ? dummyUsers.slice(1) : dummyUsers;
 
     for (const userData of usersToCreate) {
       try {
@@ -302,12 +305,20 @@ async function create12DummyUsers() {
           continue;
         }
 
-        // Create the user with team association
+        // Create the user
         const user = await prisma.user.create({
           data: {
             ...userData,
-            password: hashedPassword,
-            teamId: team.id
+            password: hashedPassword
+          }
+        });
+
+        // Create TeamMember record to associate user with team
+        await prisma.teamMember.create({
+          data: {
+            teamId: team.id,
+            userId: user.id,
+            role: user.role === 'ADMIN' ? 'ADMIN' : 'MEMBER'
           }
         });
 
@@ -324,23 +335,21 @@ async function create12DummyUsers() {
     const updatedTeam = await prisma.team.findUnique({
       where: { id: team.id },
       include: {
-        members: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            username: true,
-            department: true,
-            role: true,
-            isActive: true,
-            efficiency: true,
-            isPaidUser: true
-          }
-        },
-        captain: {
-          select: {
-            name: true,
-            email: true
+        teamMembers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                username: true,
+                department: true,
+                role: true,
+                isActive: true,
+                efficiency: true,
+                isPaidUser: true
+              }
+            }
           }
         }
       }
@@ -352,20 +361,21 @@ async function create12DummyUsers() {
     console.log(`✅ Successfully created: ${createdUsers.length} users`);
     console.log(`⚠️  Skipped (already exist): ${skippedUsers.length} users`);
     console.log(`❌ Failed to create: ${failedUsers.length} users`);
-    console.log(`👥 Total team members: ${updatedTeam.members.length}`);
-    console.log(`👑 Team captain: ${updatedTeam.captain.name}\n`);
+    console.log(`👥 Total team members: ${updatedTeam.teamMembers.length}`);
 
-    console.log('👤 TEAM ROSTER:');
-    const adminUsers = updatedTeam.members.filter(m => m.role === 'ADMIN');
-    const regularUsers = updatedTeam.members.filter(m => m.role === 'USER');
+    console.log('\n👤 TEAM ROSTER:');
+    const adminMembers = updatedTeam.teamMembers.filter(tm => tm.role === 'ADMIN');
+    const regularMembers = updatedTeam.teamMembers.filter(tm => tm.role === 'MEMBER');
 
-    console.log(`\n👑 ADMINISTRATORS (${adminUsers.length}):`);
-    adminUsers.forEach(user => {
+    console.log(`\n👑 ADMINISTRATORS (${adminMembers.length}):`);
+    adminMembers.forEach(tm => {
+      const user = tm.user;
       console.log(`   - ${user.name} (@${user.username}) - ${user.department} - ${user.isActive ? '✅ Active' : '❌ Inactive'} - ${user.efficiency}% efficiency`);
     });
 
-    console.log(`\n👤 REGULAR USERS (${regularUsers.length}):`);
-    regularUsers.forEach(user => {
+    console.log(`\n👤 REGULAR MEMBERS (${regularMembers.length}):`);
+    regularMembers.forEach(tm => {
+      const user = tm.user;
       console.log(`   - ${user.name} (@${user.username}) - ${user.department} - ${user.isActive ? '✅ Active' : '❌ Inactive'} - ${user.efficiency}% efficiency`);
     });
 

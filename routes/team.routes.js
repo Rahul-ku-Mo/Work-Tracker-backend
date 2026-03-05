@@ -8,7 +8,6 @@ const router = express.Router();
 router.route("/").get(teamController.getTeam).post(teamController.createTeam).put(teamController.updateTeam);
 router.route("/invite").post(requireWithinLimits('teamMembers'), teamController.inviteMember);
 router.route("/join").post(requireWithinLimits('teamMembers'), teamController.joinTeam);
-router.route("/members").get(teamController.getTeamMembers);
 router.route("/:teamId/members").get(teamController.getTeamMembers);
 router.route("/workspaces").get(teamController.getTeamWorkspaces);
 

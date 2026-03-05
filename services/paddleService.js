@@ -4,13 +4,13 @@ const crypto = require('crypto');
 class PaddleService {
   constructor() {
     // Ensure API key is properly formatted
-    const apiKey = process.env.PADDLE_API_KEY_SB;
+    const apiKey = process.env.PADDLE_API_KEY || process.env.PADDLE_API_KEY_SB;
     if (!apiKey) {
       throw new Error('PADDLE_API_KEY is required');
     }
     
     this.paddle = new Paddle(apiKey.trim(), {
-      environment: process.env.PADDLE_ENVIRONMENT_SB || 'sandbox',
+      environment: process.env.PADDLE_ENVIRONMENT || process.env.PADDLE_ENVIRONMENT_SB || 'sandbox',
     });
   }
 
@@ -69,15 +69,22 @@ class PaddleService {
     }
   }
 
-  // Create or get customer
-  async createCustomer({ email, name, userId }) {
+  // Create or get customer (supports both user and team-based)
+  async createCustomer({ email, name, userId, teamId }) {
     try {
+      const customData = {
+        user_id: userId
+      };
+      
+      // Add team_id to custom data if provided
+      if (teamId) {
+        customData.team_id = teamId;
+      }
+
       const customer = await this.paddle.customers.create({
         name: name,
         email: email,
-        custom_data: {
-          user_id: userId
-        }
+        custom_data: customData
       });
 
       return customer.id;

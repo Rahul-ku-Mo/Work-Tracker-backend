@@ -115,7 +115,6 @@ exports.signup = async (req, res) => {
         username: finalUsername,
         name: finalName,
         role: teamToJoin ? "USER" : "ADMIN", // If joining via invite, make them USER, otherwise ADMIN
-        teamId: teamToJoin ? teamToJoin.id : null, // Auto-join team if invite code is valid
       },
       select: {
         id: true,
@@ -135,36 +134,22 @@ exports.signup = async (req, res) => {
         updatedAt: true,
         password: false,
         isPaidUser: true,
-        team: {
-          select: {
-            id: true,
-            name: true,
-            joinCode: true
-          }
-        }
       },
     });
 
-    // Create Paddle customer for billing consistency
-    try {
-      const paddleCustomerId = await paddleService.createCustomer({
-        email: user.email,
-        name: user.name,
-        userId: user.id
+    // If joining via invite code, create TeamMember record
+    if (teamToJoin) {
+      await prisma.teamMember.create({
+        data: {
+          teamId: teamToJoin.id,
+          userId: user.id,
+          role: "MEMBER"
+        }
       });
-      
-      // Update user with Paddle customer ID
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { paddleCustomerId }
-      });
-      
-      console.log(`✅ Created Paddle customer ${paddleCustomerId} for user ${user.email}`);
-    } catch (paddleError) {
-      console.error('❌ Failed to create Paddle customer for user:', user.email, paddleError);
-      // Don't fail the signup process, but log the error for monitoring
-      // The user can still use the app, and customer creation can be retried later
     }
+
+    // Paddle customer creation moved to team creation/invitation flow
+    // Only team admins will have Paddle customers created
 
     const accesstoken = this.createSendToken(user, res);
 
@@ -212,11 +197,15 @@ exports.login = async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { email: email },
     include: {
-      team: {
-        select: {
-          id: true,
-          name: true,
-          joinCode: true
+      teamMemberships: {
+        include: {
+          team: {
+            select: {
+              id: true,
+              name: true,
+              joinCode: true
+            }
+          }
         }
       }
     }
@@ -302,11 +291,15 @@ exports.oauthGoogleLogin = async (req, res) => {
         updatedAt: true,
         isPaidUser: true,
         password: false, // Exclude password
-        team: {
-          select: {
-            id: true,
-            name: true,
-            joinCode: true
+        teamMemberships: {
+          include: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+                joinCode: true
+              }
+            }
           }
         }
       },
@@ -357,35 +350,22 @@ exports.oauthGoogleLogin = async (req, res) => {
           role: true,
           updatedAt: true,
           password: false, // Exclude password
-          team: {
-            select: {
-              id: true,
-              name: true,
-              joinCode: true
+          teamMemberships: {
+            include: {
+              team: {
+                select: {
+                  id: true,
+                  name: true,
+                  joinCode: true
+                }
+              }
             }
           }
         },
       });
 
-      // Create Paddle customer for Google OAuth users
-      try {
-        const paddleCustomerId = await paddleService.createCustomer({
-          email: existingUser.email,
-          name: existingUser.name,
-          userId: existingUser.id
-        });
-        
-        // Update user with Paddle customer ID
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { paddleCustomerId }
-        });
-        
-        console.log(`✅ Created Paddle customer ${paddleCustomerId} for Google OAuth user ${existingUser.email}`);
-      } catch (paddleError) {
-        console.error('❌ Failed to create Paddle customer for Google OAuth user:', existingUser.email, paddleError);
-        // Don't fail the signup process, but log the error for monitoring
-      }
+      // Paddle customer creation moved to team creation flow
+      // Only team admins will have Paddle customers created
     }
 
     // Create JWT token for our application
@@ -496,4 +476,5 @@ exports.checkTrialStatus = async (req, res) => {
     return res.status(500).json({ message: "Error checking trial status" });
   }
 };
+
 

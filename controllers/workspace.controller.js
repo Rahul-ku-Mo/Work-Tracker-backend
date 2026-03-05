@@ -160,44 +160,46 @@ exports.getWorkspace = async (req, res) => {
 
 exports.createWorkspace = async (req, res) => {
   try {
-    const { title, colorId, colorValue, colorName, projectId } = req.body;
-    const {teamId} = req.params;
-
+    const { title, colorId, colorValue, colorName } = req.body;
+    const { projectSlug } = req.params;
     const { userId } = req.user;
     
-    if (!teamId) {
+    if (!projectSlug) {
       return res.status(400).json({
         status: 400,
-        message: "teamId is required",
+        message: "projectSlug is required",
       });
     }
 
-    if (!projectId) {
-      return res.status(400).json({
-        status: 400,
-        message: "projectId is required",
-      });
-    }
-
-    // Verify user has access to the specified project
+    // Look up the project by slug to derive teamId and projectId
     const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        teamId: teamId,
-        OR: [
-          { leadId: userId },
-          { members: { some: { userId: userId } } }
-        ]
-      },
-      include: {
-        team: true
-      }
+      where: { slug: projectSlug },
+      include: { team: true }
     });
 
     if (!project) {
+      return res.status(404).json({
+        status: 404,
+        message: "Project not found",
+      });
+    }
+
+    const teamId = project.teamId;
+    const projectId = project.id;
+
+    // Check if user is team admin
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: teamId,
+        userId: userId,
+        role: 'ADMIN'
+      }
+    });
+
+    if (!teamMember) {
       return res.status(403).json({
         status: 403,
-        message: "Project not found or you don't have access to it",
+        message: "Only team administrators can create workspaces. Please contact your team admin.",
       });
     }
 
@@ -317,12 +319,12 @@ exports.deleteWorkspace = async (req, res) => {
 
     // Check if user is admin of workspace or project
     const userMember = workspace.members.find(member => true);
-    const isProjectLead = workspace.project.leadId === userId;
+    const isProjectAdmin = workspace.project.leadId === userId;
     
-    if ((!userMember || userMember.role !== 'ADMIN') && !isProjectLead) {
+    if ((!userMember || userMember.role !== 'ADMIN') && !isProjectAdmin) {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins or project lead can delete the workspace",
+        message: "Only workspace admins or project admin can delete the workspace",
       });
     }
 

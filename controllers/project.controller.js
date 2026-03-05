@@ -6,19 +6,39 @@ const {
 } = require("../utils/slugUtils");
 const { checkUndefined } = require("../utils/checkUtils");
 
-// Get all projects for a team
+// Get all projects for a team (only accessible projects)
 const getProjects = async (req, res) => {
   try {
     const { teamId } = req.query;
+    const { userId } = req.user;
 
     if (!teamId) {
       return res.status(400).json({ error: "Team ID is required" });
     }
 
+    // Check if user is team admin
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: teamId,
+        userId: userId,
+        role: 'ADMIN'
+      }
+    });
+
+    const isTeamAdmin = !!teamMember;
+
     // Base query to get team projects
-    const whereClause = {
+    let whereClause = {
       teamId: teamId,
     };
+
+    // If not team admin, only show projects where user is lead or member
+    if (!isTeamAdmin) {
+      whereClause.OR = [
+        { leadId: userId },
+        { members: { some: { userId: userId } } }
+      ];
+    }
 
     const include = {
       members: {
@@ -49,10 +69,112 @@ const getProjects = async (req, res) => {
       include,
     });
 
-    res.json(projects);
+    // Add access information for each project
+    const projectsWithAccess = projects.map(project => {
+      const isLead = project.leadId === userId;
+      const isMember = project.members.some(m => m.userId === userId);
+      const hasAccess = isTeamAdmin || isLead || isMember;
+      
+      return {
+        ...project,
+        userAccess: {
+          hasAccess,
+          isLead,
+          isMember,
+          isTeamAdmin,
+          role: isLead ? 'ADMIN' : isMember ? 'MEMBER' : isTeamAdmin ? 'ADMIN' : null
+        }
+      };
+    });
+
+    res.json(projectsWithAccess);
   } catch (error) {
     console.error("Error fetching projects:", error);
     res.status(500).json({ error: "Failed to fetch projects" });
+  }
+};
+
+// Get all team projects (including locked ones for visibility)
+const getTeamProjects = async (req, res) => {
+  try {
+    const { teamId } = req.query;
+    const { userId } = req.user;
+
+    if (!teamId) {
+      return res.status(400).json({ error: "Team ID is required" });
+    }
+
+    // Check if user is team member
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: teamId,
+        userId: userId,
+      }
+    });
+
+    if (!teamMember) {
+      return res.status(403).json({ error: "You are not a member of this team" });
+    }
+
+    const isTeamAdmin = teamMember.role === 'ADMIN';
+
+    const include = {
+      members: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              imageUrl: true,
+            },
+          },
+        },
+      },
+      lead: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          imageUrl: true,
+        },
+      },
+    };
+
+    const projects = await prisma.project.findMany({
+      where: { teamId: teamId },
+      orderBy: [{ createdAt: "desc" }],
+      include,
+    });
+
+    // Add access information for each project
+    const projectsWithAccess = projects.map(project => {
+      const isLead = project.leadId === userId;
+      const isMember = project.members.some(m => m.userId === userId);
+      const isOwner = project.creatorId === userId;
+      const hasAccess = isTeamAdmin || isLead || isMember;
+      
+      return {
+        id: project.id,
+        title: project.title,
+        slug: project.slug,
+        status: project.status,
+        priority: project.priority,
+        targetDate: project.targetDate,
+        leadId: project.leadId,
+        createdBy: project.lead?.name || 'Unknown',
+        hasAccess,
+        isOwner,
+        userRole: isLead ? 'ADMIN' : isMember ? 'MEMBER' : isTeamAdmin ? 'ADMIN' : null,
+        members: hasAccess ? project.members : [], // Only show members if user has access
+        lead: hasAccess ? project.lead : null,
+      };
+    });
+
+    res.json(projectsWithAccess);
+  } catch (error) {
+    console.error("Error fetching team projects:", error);
+    res.status(500).json({ error: "Failed to fetch team projects" });
   }
 };
 
@@ -65,7 +187,27 @@ const getProject = async (req, res) => {
       where: { slug: projectSlug },
       include: {
         milestones: true,
-        members: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        workspaces: true,
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
       },
     });
 
@@ -97,6 +239,7 @@ const createProject = async (req, res) => {
       summary,
       milestones = [],
     } = req.body;
+    const { userId } = req.user;
 
     // Format milestones for the enhanced milestone system
 
@@ -108,17 +251,25 @@ const createProject = async (req, res) => {
       return res.status(400).json({ error: "Title and teamId are required" });
     }
 
-    // Check if team exists
-    const teamExists = await prisma.team.findUnique({
-      where: { id: teamId },
+    // Check if team exists and user is team admin
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId: teamId,
+        userId: userId,
+        role: 'ADMIN'
+      },
+      include: {
+        team: true
+      }
     });
 
-    if (!teamExists) {
-      console.log("Team not found with ID:", teamId);
-      return res.status(400).json({ error: "Team not found" });
+    if (!teamMember) {
+      return res.status(403).json({ 
+        error: "Only team administrators can create projects. Please contact your team admin." 
+      });
     }
 
-    console.log("Team found:", teamExists.name);
+    console.log("Team found:", teamMember.team.name);
 
     // Generate unique slug globally
     const slug = await generateUniqueSlug(title, async (slug) => {
@@ -162,7 +313,7 @@ const createProject = async (req, res) => {
           data: {
             projectId: project.id,
             userId: memberId,
-            role: memberId === leadId ? "LEAD" : "MEMBER",
+            role: memberId === leadId ? "ADMIN" : "MEMBER",
           },
         })
       );
@@ -279,7 +430,7 @@ const updateProject = async (req, res) => {
           data: members.map((memberId) => ({
             projectId: currentProject.id,
             userId: memberId,
-            role: memberId === leadId ? "LEAD" : "MEMBER",
+            role: memberId === leadId ? "ADMIN" : "MEMBER",
           })),
         });
       }
@@ -417,7 +568,7 @@ const updateProjectTargetDate = async (req, res) => {
   }
 };
 
-// Update project lead
+// Update project admin
 const updateProjectLead = async (req, res) => {
   try {
     const { projectSlug } = req.params;
@@ -480,8 +631,8 @@ const updateProjectLead = async (req, res) => {
 
     res.json(updatedProject);
   } catch (error) {
-    console.error("Error updating project lead:", error);
-    res.status(500).json({ error: "Failed to update project lead" });
+    console.error("Error updating project admin:", error);
+    res.status(500).json({ error: "Failed to update project admin" });
   }
 };
 
@@ -535,7 +686,7 @@ const updateProjectMembers = async (req, res) => {
           data: memberIds.map((memberId) => ({
             projectId: project.id,
             userId: memberId,
-            role: memberId === project.leadId ? "LEAD" : "MEMBER",
+            role: memberId === project.leadId ? "ADMIN" : "MEMBER",
           })),
         });
       }
@@ -716,6 +867,7 @@ const updateMilestoneCompletion = async (req, res) => {
 
 module.exports = {
   getProjects,
+  getTeamProjects,
   getProject,
   createProject,
   updateProject,

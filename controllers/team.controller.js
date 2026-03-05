@@ -1,5 +1,6 @@
 const { prisma } = require("../db");
 const emailService = require("../services/emailService");
+const paddleService = require("../services/paddleService");
 
 exports.createTeam = async (req, res) => {
   try {
@@ -23,11 +24,11 @@ exports.createTeam = async (req, res) => {
     const existingTeamMember = await prisma.teamMember.findFirst({
       where: {
         userId: userId,
-        role: "ADMIN"
+        role: "ADMIN",
       },
       include: {
-        team: true
-      }
+        team: true,
+      },
     });
 
     if (existingTeamMember) {
@@ -40,6 +41,12 @@ exports.createTeam = async (req, res) => {
     // Generate a join code for inviting members
     const joinCode = Math.random().toString(36).substring(2, 10).toUpperCase();
 
+    // Get user details for Paddle customer creation
+    const userDetails = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+
     // Create the team with the new schema structure
     const team = await prisma.team.create({
       data: {
@@ -48,9 +55,9 @@ exports.createTeam = async (req, res) => {
         teamMembers: {
           create: {
             userId: userId,
-            role: "ADMIN"
-          }
-        }
+            role: "ADMIN",
+          },
+        },
       },
       include: {
         teamMembers: {
@@ -60,18 +67,45 @@ exports.createTeam = async (req, res) => {
                 id: true,
                 name: true,
                 email: true,
-                imageUrl: true
-              }
-            }
-          }
-        }
-      }
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
+
+    // Create Paddle customer for the team (only for team admins)
+    try {
+      const paddleCustomerId = await paddleService.createCustomer({
+        email: userDetails.email,
+        name: userDetails.name,
+        userId: userId,
+        teamId: team.id,
+      });
+
+      // Update team with Paddle customer ID
+      await prisma.team.update({
+        where: { id: team.id },
+        data: { paddleCustomerId },
+      });
+
+      console.log(
+        `✅ Created Paddle customer ${paddleCustomerId} for team ${team.name}`
+      );
+    } catch (paddleError) {
+      console.error(
+        "❌ Failed to create Paddle customer for team:",
+        team.name,
+        paddleError
+      );
+      // Don't fail the team creation process, but log the error for monitoring
+    }
 
     return res.status(201).json({
       status: 201,
       message: "Team created successfully",
-      data: team
+      data: team,
     });
   } catch (error) {
     console.error(error);
@@ -86,7 +120,7 @@ exports.getTeam = async (req, res) => {
     // Find team where user is a team member (admin/owner)
     const team = await prisma.team.findFirst({
       where: {
-        teamMembers: { some: { userId: userId } }
+        teamMembers: { some: { userId: userId } },
       },
       include: {
         teamMembers: {
@@ -96,12 +130,12 @@ exports.getTeam = async (req, res) => {
                 id: true,
                 name: true,
                 email: true,
-                imageUrl: true
-              }
-            }
-          }
-        }
-      }
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!team) {
@@ -114,7 +148,7 @@ exports.getTeam = async (req, res) => {
     return res.status(200).json({
       status: 200,
       message: "Team retrieved successfully",
-      data: team
+      data: team,
     });
   } catch (error) {
     console.error(error);
@@ -136,13 +170,13 @@ exports.updateTeam = async (req, res) => {
 
     // Find team where user is ADMIN (only admins can update team)
     const teamMember = await prisma.teamMember.findFirst({
-      where: { 
+      where: {
         userId: userId,
-        role: "ADMIN"
+        role: "ADMIN",
       },
       include: {
-        team: true
-      }
+        team: true,
+      },
     });
 
     if (!teamMember) {
@@ -164,18 +198,18 @@ exports.updateTeam = async (req, res) => {
                 id: true,
                 name: true,
                 email: true,
-                imageUrl: true
-              }
-            }
-          }
-        }
-      }
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     return res.status(200).json({
       status: 200,
       message: "Team updated successfully",
-      data: updatedTeam
+      data: updatedTeam,
     });
   } catch (error) {
     console.error(error);
@@ -221,11 +255,11 @@ exports.inviteMember = async (req, res) => {
     const teamMember = await prisma.teamMember.findFirst({
       where: {
         userId: userId,
-        role: "ADMIN"
+        role: "ADMIN",
       },
       include: {
-        team: true
-      }
+        team: true,
+      },
     });
 
     if (!teamMember) {
@@ -250,22 +284,25 @@ exports.inviteMember = async (req, res) => {
     // Find the user to invite
     const userToInvite = await prisma.user.findUnique({
       where: {
-        email: trimmedEmail
-      }
+        email: trimmedEmail,
+      },
     });
 
     if (userToInvite) {
       // User exists - check if already in a team
       const userCurrentTeam = await prisma.user.findUnique({
         where: { id: userToInvite.id },
-        include: { 
+        include: {
           teamMemberships: {
-            select: { teamId: true }
-          }
-        }
+            select: { teamId: true },
+          },
+        },
       });
 
-      if (userCurrentTeam.teamMemberships && userCurrentTeam.teamMemberships.length > 0) {
+      if (
+        userCurrentTeam.teamMemberships &&
+        userCurrentTeam.teamMemberships.length > 0
+      ) {
         return res.status(400).json({
           status: 400,
           message: "User is already a member of another team",
@@ -275,15 +312,15 @@ exports.inviteMember = async (req, res) => {
       // Add existing user to team
       const updatedTeam = await prisma.team.update({
         where: {
-          id: team.id
+          id: team.id,
         },
         data: {
           teamMembers: {
             create: {
               userId: userToInvite.id,
-              role: "MEMBER"
-            }
-          }
+              role: "MEMBER",
+            },
+          },
         },
         include: {
           teamMembers: {
@@ -293,12 +330,12 @@ exports.inviteMember = async (req, res) => {
                   id: true,
                   name: true,
                   email: true,
-                  imageUrl: true
-                }
-              }
-            }
-          }
-        }
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       // Create notification for team admin about new member joining
@@ -309,22 +346,24 @@ exports.inviteMember = async (req, res) => {
           message: "JOIN",
           metadata: JSON.stringify({
             teamName: team.name,
-            teamId: team.id
-          })
-        }
+            teamId: team.id,
+          }),
+        },
       });
 
       return res.status(200).json({
         status: 200,
-        message: `${userToInvite.name || userToInvite.email} has been successfully added to the team`,
-        data: updatedTeam
+        message: `${
+          userToInvite.name || userToInvite.email
+        } has been successfully added to the team`,
+        data: updatedTeam,
       });
     } else {
       // User doesn't exist - send email invitation
       try {
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
         const inviterName = user.name || user.email;
-        
+
         await emailService.sendTeamInvitation(
           trimmedEmail,
           team.name,
@@ -339,11 +378,11 @@ exports.inviteMember = async (req, res) => {
           data: {
             email: trimmedEmail,
             joinCode: team.joinCode,
-            teamName: team.name
-          }
+            teamName: team.name,
+          },
         });
       } catch (emailError) {
-        console.error('Email sending failed:', emailError);
+        console.error("Email sending failed:", emailError);
         return res.status(500).json({
           status: 500,
           message: `Failed to send invitation email to ${trimmedEmail}. Please check email configuration.`,
@@ -351,10 +390,10 @@ exports.inviteMember = async (req, res) => {
       }
     }
   } catch (error) {
-    console.error('Error in inviteMember:', error);
-    res.status(500).json({ 
-      status: 500, 
-      message: "Internal Server Error. Please try again later." 
+    console.error("Error in inviteMember:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Internal Server Error. Please try again later.",
     });
   }
 };
@@ -378,17 +417,21 @@ exports.joinTeam = async (req, res) => {
     // Check if user is already in a team
     const userWithTeam = await prisma.user.findUnique({
       where: { id: userId },
-      include: { 
+      include: {
         teamMemberships: {
-          select: { teamId: true }
-        }
-      }
+          select: { teamId: true },
+        },
+      },
     });
 
-    if (userWithTeam.teamMemberships && userWithTeam.teamMemberships.length > 0) {
+    if (
+      userWithTeam.teamMemberships &&
+      userWithTeam.teamMemberships.length > 0
+    ) {
       return res.status(400).json({
         status: 400,
-        message: "You are already a member of a team. Leave your current team first to join another.",
+        message:
+          "You are already a member of a team. Leave your current team first to join another.",
       });
     }
 
@@ -402,12 +445,12 @@ exports.joinTeam = async (req, res) => {
               select: {
                 id: true,
                 name: true,
-                email: true
-              }
-            }
-          }
-        }
-      }
+                email: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!team) {
@@ -424,109 +467,9 @@ exports.joinTeam = async (req, res) => {
         teamMembers: {
           create: {
             userId: userId,
-            role: "MEMBER"
-          }
-        }
-      },
-      include: {
-        teamMembers: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                imageUrl: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Create notification for team admin
-    const teamAdmin = team.teamMembers.find(tm => tm.role === 'ADMIN');
-    if (teamAdmin) {
-      await prisma.notification.create({
-        data: {
-          senderId: userId,
-          receiverId: teamAdmin.userId,
-          message: "JOIN",
-          metadata: JSON.stringify({
-            teamName: team.name,
-            teamId: team.id
-          })
-        }
-      });
-    }
-
-    return res.status(200).json({
-      status: 200,
-      message: `Successfully joined ${team.name}`,
-      data: updatedTeam
-    });
-  } catch (error) {
-    console.error('Error in joinTeam:', error);
-    res.status(500).json({ 
-      status: 500, 
-      message: "Internal Server Error. Please try again later." 
-    });
-  }
-};
-
-// Get members by project ID (since members are now associated with projects)
-exports.getTeamMembers = async (req, res) => {
-  try {
-    const { userId } = req.user;
-    const { projectId } = req.query;
-
-    // If projectId is provided, get project members
-    if (projectId) {
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        include: {
-          members: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  imageUrl: true,
-                  username: true,
-                  department: true,
-                  isActive: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      if (!project) {
-        return res.status(404).json({
-          status: 404,
-          message: "Project not found",
-        });
-      }
-
-      const members = project.members.map(member => ({
-        ...member.user,
-        role: member.role,
-        joinedAt: member.joinedAt
-      }));
-
-      return res.status(200).json({
-        status: 200,
-        message: "Project members retrieved successfully",
-        data: members,
-      });
-    }
-
-    // If no projectId, get all team members (admins/owners) and all project members
-    const team = await prisma.team.findFirst({
-      where: {
-        teamMembers: { some: { userId: userId } }
+            role: "MEMBER",
+          },
+        },
       },
       include: {
         teamMembers: {
@@ -537,77 +480,40 @@ exports.getTeamMembers = async (req, res) => {
                 name: true,
                 email: true,
                 imageUrl: true,
-                username: true,
-                department: true,
-                isActive: true
-              }
-            }
-          }
+              },
+            },
+          },
         },
-        projects: {
-          include: {
-            members: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true,
-                    imageUrl: true,
-                    username: true,
-                    department: true,
-                    isActive: true
-                  }
-                }
-              }
-            }
-          }
-        }
       },
     });
 
-    if (!team) {
-      return res.status(404).json({
-        status: 404,
-        message: "Team not found",
+    // Create notification for team admin
+    const teamAdmin = team.teamMembers.find((tm) => tm.role === "ADMIN");
+    if (teamAdmin) {
+      await prisma.notification.create({
+        data: {
+          senderId: userId,
+          receiverId: teamAdmin.userId,
+          message: "JOIN",
+          metadata: JSON.stringify({
+            teamName: team.name,
+            teamId: team.id,
+          }),
+        },
       });
     }
 
-    // Combine team admins and project members (deduplicated)
-    const allMembers = new Map();
-    
-    // Add team admins
-    team.teamMembers.forEach(tm => {
-      allMembers.set(tm.user.id, {
-        ...tm.user,
-        role: 'TEAM_ADMIN',
-        joinedAt: tm.joinedAt
-      });
-    });
-
-    // Add project members
-    team.projects.forEach(project => {
-      project.members.forEach(member => {
-        if (!allMembers.has(member.user.id)) {
-          allMembers.set(member.user.id, {
-            ...member.user,
-            role: member.role,
-            joinedAt: member.joinedAt,
-            projectId: project.id,
-            projectTitle: project.title
-          });
-        }
-      });
-    });
-
     return res.status(200).json({
       status: 200,
-      message: "Team members retrieved successfully",
-      data: Array.from(allMembers.values()),
+      message: `Successfully joined ${team.name}`,
+      data: updatedTeam,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ status: 500, message: "Internal Server Error" });
+    console.error("Error in joinTeam:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Internal Server Error. Please try again later.",
+    });
   }
 };
 
@@ -624,7 +530,7 @@ exports.validateInviteCode = async (req, res) => {
 
     const team = await prisma.team.findUnique({
       where: {
-        joinCode: code.trim().toUpperCase()
+        joinCode: code.trim().toUpperCase(),
       },
       select: {
         id: true,
@@ -632,23 +538,23 @@ exports.validateInviteCode = async (req, res) => {
         joinCode: true,
         teamMembers: {
           where: {
-            role: 'ADMIN'
+            role: "ADMIN",
           },
           include: {
             user: {
               select: {
                 name: true,
-                email: true
-              }
-            }
-          }
+                email: true,
+              },
+            },
+          },
         },
         _count: {
           select: {
-            teamMembers: true
-          }
-        }
-      }
+            teamMembers: true,
+          },
+        },
+      },
     });
 
     if (!team) {
@@ -666,15 +572,15 @@ exports.validateInviteCode = async (req, res) => {
       data: {
         id: team.id,
         name: team.name,
-        admin: admin?.name || admin?.email || 'Team Admin',
-        memberCount: team._count.teamMembers
-      }
+        admin: admin?.name || admin?.email || "Team Admin",
+        memberCount: team._count.teamMembers,
+      },
     });
   } catch (error) {
-    console.error('Error in validateInviteCode:', error);
-    res.status(500).json({ 
-      status: 500, 
-      message: "Internal Server Error" 
+    console.error("Error in validateInviteCode:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Internal Server Error",
     });
   }
 };
@@ -693,31 +599,48 @@ exports.getTeamWorkspaces = async (req, res) => {
             team: {
               select: {
                 id: true,
-                name: true
-              }
-            }
-          }
-        }
-      }
+                name: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    if (!userWithTeam || !userWithTeam.teamMemberships || userWithTeam.teamMemberships.length === 0) {
+    if (
+      !userWithTeam ||
+      !userWithTeam.teamMemberships ||
+      userWithTeam.teamMemberships.length === 0
+    ) {
       return res.status(404).json({
         status: 404,
         message: "No team found for user",
-        data: []
+        data: [],
       });
     }
 
     // Get the first team (users should only have one team membership)
     const teamId = userWithTeam.teamMemberships[0].team.id;
+    const isTeamAdmin = userWithTeam.teamMemberships[0].role === "ADMIN";
 
-    // Get all workspaces for the team through projects
+    // Get user's project memberships to filter workspaces
+    const projectMemberships = await prisma.projectMember.findMany({
+      where: { userId },
+      select: { projectId: true, role: true },
+    });
+
+    const accessibleProjectIds = projectMemberships.map((pm) => pm.projectId);
+
+    // Team admins can see all workspaces
+    // Regular users can only see workspaces from projects they have access to
+    const projectFilter = isTeamAdmin
+      ? { teamId: teamId }
+      : { teamId: teamId, id: { in: accessibleProjectIds } };
+
+    // Get workspaces only from projects the user has access to
     const allTeamWorkspaces = await prisma.workspace.findMany({
       where: {
-        project: {
-          teamId: teamId
-        }
+        project: projectFilter,
       },
       select: {
         id: true,
@@ -733,49 +656,54 @@ exports.getTeamWorkspaces = async (req, res) => {
             user: {
               select: {
                 name: true,
-                email: true
-              }
-            }
-          }
+                email: true,
+              },
+            },
+          },
         },
         project: {
           select: {
             id: true,
             title: true,
-            teamId: true
-          }
-        }
+            slug: true,
+            teamId: true,
+          },
+        },
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: "desc",
+      },
     });
 
     // Add access status to each workspace
-    const workspacesWithAccess = allTeamWorkspaces.map(workspace => {
-      const currentUserMember = workspace.members.find(m => m.userId === userId);
-      const creatorMember = workspace.members.find(m => m.role === 'ADMIN');
-      
+    const workspacesWithAccess = allTeamWorkspaces.map((workspace) => {
+      const currentUserMember = workspace.members.find(
+        (m) => m.userId === userId
+      );
+      const creatorMember = workspace.members.find((m) => m.role === "ADMIN");
+
       return {
         ...workspace,
         hasAccess: !!currentUserMember,
         userRole: currentUserMember?.role || null,
-        isOwner: currentUserMember?.role === 'ADMIN',
-        createdBy: creatorMember?.user?.name || creatorMember?.user?.email || 'Unknown',
-        teamId: teamId
+        isOwner: currentUserMember?.role === "ADMIN",
+        createdBy:
+          creatorMember?.user?.name || creatorMember?.user?.email || "Unknown",
+        teamId: teamId,
+        projectId: workspace.project.id,
       };
     });
 
     return res.status(200).json({
       status: 200,
       message: "Team workspaces retrieved successfully",
-      data: workspacesWithAccess
+      data: workspacesWithAccess,
     });
   } catch (error) {
-    console.error('Error in getTeamWorkspaces:', error);
-    res.status(500).json({ 
-      status: 500, 
-      message: "Internal Server Error" 
+    console.error("Error in getTeamWorkspaces:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Internal Server Error",
     });
   }
 };
@@ -796,6 +724,7 @@ exports.getWorkspaceMembers = async (req, res) => {
             name: true,
             email: true,
             imageUrl: true,
+            role: true,
           },
         },
       },
@@ -944,19 +873,19 @@ exports.sendWorkspaceInvitation = async (req, res) => {
         where: { id: parseInt(workspaceId) },
         include: {
           user: {
-            select: { name: true, email: true }
-          }
-        }
+            select: { name: true, email: true },
+          },
+        },
       });
 
       const inviter = await prisma.user.findUnique({
         where: { id: userId },
-        select: { name: true, email: true }
+        select: { name: true, email: true },
       });
 
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const workspaceUrl = `${frontendUrl}/workspace/${workspaceId}`;
-      
+
       await emailService.sendWorkspaceInvitation(
         user.email,
         workspace.title,
@@ -966,7 +895,7 @@ exports.sendWorkspaceInvitation = async (req, res) => {
         frontendUrl
       );
     } catch (emailError) {
-      console.error('Failed to send workspace invitation email:', emailError);
+      console.error("Failed to send workspace invitation email:", emailError);
       // Don't fail the request if email fails
     }
 
@@ -984,11 +913,10 @@ exports.sendWorkspaceInvitation = async (req, res) => {
 // Get team members with their board access
 const getTeamMembers = async (req, res) => {
   const { teamId } = req.params;
-  const userId = req.user?.userId; // Use userId from JWT token
 
   try {
     let team;
-    
+
     if (teamId) {
       // If teamId is provided, use it directly
       team = await prisma.team.findUnique({
@@ -997,165 +925,54 @@ const getTeamMembers = async (req, res) => {
           teamMembers: {
             include: {
               user: {
-                include: {
-                  workspaces: {
-                    include: {
-                      workspace: {
-                        select: {
-                          id: true,
-                          title: true,
-                          colorName: true,
-                          colorValue: true
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+                include: true
+              },
+            },
           },
           projects: {
-            include: {
-              members: {
-                include: {
-                  user: {
-                    include: {
-                      workspaces: {
-                        include: {
-                          workspace: {
-                            select: {
-                              id: true,
-                              title: true,
-                              colorName: true,
-                              colorValue: true
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+            include: true,
+          },
+        },
       });
-    } else if (userId) {
-      // If no teamId provided, find team through user's team membership
-      const teamMembership = await prisma.teamMember.findFirst({
-        where: { userId: userId },
-        include: {
-          team: {
-            include: {
-              teamMembers: {
-                include: {
-                  user: {
-                    include: {
-                      workspaces: {
-                        include: {
-                          workspace: {
-                            select: {
-                              id: true,
-                              title: true,
-                              colorName: true,
-                              colorValue: true
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              projects: {
-                include: {
-                  members: {
-                    include: {
-                      user: {
-                        include: {
-                          workspaces: {
-                            include: {
-                              workspace: {
-                                select: {
-                                  id: true,
-                                  title: true,
-                                  colorName: true,
-                                  colorValue: true
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-      
-      // Get the user's team
-      team = teamMembership?.team;
     } else {
       return res.status(400).json({
         status: 400,
-        message: "Team ID or user authentication required"
+        message: "Team ID or user authentication required",
       });
     }
 
     if (!team) {
       return res.status(404).json({
         status: 404,
-        message: "Team not found"
+        message: "Team not found",
       });
     }
 
     // Collect all members from team and projects
     const allMembers = new Map();
 
-    // Add team members (admins)
-    team.teamMembers?.forEach(tm => {
+    // Add team members
+    team.teamMembers?.forEach((tm) => {
       const user = tm.user;
       allMembers.set(user.id, {
         ...user,
-        role: 'TEAM_ADMIN',
-        boardAccess: user.workspaces?.map(wu => ({
-          board: wu.workspace,
-          role: wu.role,
-          canEdit: wu.role === 'ADMIN'
-        })) || []
+        boardAccess:
+          user.workspaces?.map((wu) => ({
+            board: wu.workspace,
+            role: wu.role,
+          })) || [],
       });
     });
 
-    // Add project members
-    team.projects?.forEach(project => {
-      project.members?.forEach(member => {
-        const user = member.user;
-        if (!allMembers.has(user.id)) {
-          allMembers.set(user.id, {
-            ...user,
-            role: member.role,
-            projectId: project.id,
-            projectTitle: project.title,
-            boardAccess: user.workspaces?.map(wu => ({
-              board: wu.workspace,
-              role: wu.role,
-              canEdit: wu.role === 'ADMIN'
-            })) || []
-          });
-        }
-      });
-    });
+  
 
     res.status(200).json({
       status: 200,
       message: "Success",
       data: {
         team,
-        members: Array.from(allMembers.values())
-      }
+        members: Array.from(allMembers.values()),
+      },
     });
   } catch (error) {
     console.log(error);
@@ -1166,7 +983,7 @@ const getTeamMembers = async (req, res) => {
 // Add user to workspace (Admin only)
 const addUserToWorkspace = async (req, res) => {
   const { workspaceId, userId } = req.params;
-  const { role = 'MEMBER' } = req.body;
+  const { role = "MEMBER" } = req.body;
   const requestorId = req.user?.userId; // Use userId from JWT token
 
   try {
@@ -1175,27 +992,27 @@ const addUserToWorkspace = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: requestorId
-        }
-      }
+          userId: requestorId,
+        },
+      },
     });
 
-    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+    if (!requestorAccess || requestorAccess.role !== "ADMIN") {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins can add users"
+        message: "Only workspace admins can add users",
       });
     }
 
     // Check if user exists
     const user = await prisma.user.findUnique({
-      where: { id: userId }
+      where: { id: userId },
     });
 
     if (!user) {
       return res.status(404).json({
         status: 404,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
@@ -1204,14 +1021,14 @@ const addUserToWorkspace = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: userId
-        }
+          userId: userId,
+        },
       },
       update: { role },
       create: {
         workspaceId: parseInt(workspaceId),
         userId: userId,
-        role
+        role,
       },
       include: {
         user: {
@@ -1221,16 +1038,16 @@ const addUserToWorkspace = async (req, res) => {
             email: true,
             username: true,
             imageUrl: true,
-            department: true
-          }
-        }
-      }
+            department: true,
+          },
+        },
+      },
     });
 
     res.status(200).json({
       status: 200,
       message: "User added to workspace successfully",
-      data: workspaceUser
+      data: workspaceUser,
     });
   } catch (error) {
     console.log(error);
@@ -1249,15 +1066,15 @@ const removeUserFromWorkspace = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: requestorId
-        }
-      }
+          userId: requestorId,
+        },
+      },
     });
 
-    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+    if (!requestorAccess || requestorAccess.role !== "ADMIN") {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins can remove users"
+        message: "Only workspace admins can remove users",
       });
     }
 
@@ -1266,14 +1083,14 @@ const removeUserFromWorkspace = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: userId
-        }
-      }
+          userId: userId,
+        },
+      },
     });
 
     res.status(200).json({
       status: 200,
-      message: "User removed from workspace successfully"
+      message: "User removed from workspace successfully",
     });
   } catch (error) {
     console.log(error);
@@ -1293,15 +1110,15 @@ const updateUserPermissions = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: requestorId
-        }
-      }
+          userId: requestorId,
+        },
+      },
     });
 
-    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+    if (!requestorAccess || requestorAccess.role !== "ADMIN") {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins can update permissions"
+        message: "Only workspace admins can update permissions",
       });
     }
 
@@ -1310,8 +1127,8 @@ const updateUserPermissions = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: userId
-        }
+          userId: userId,
+        },
       },
       data: { role },
       include: {
@@ -1321,16 +1138,16 @@ const updateUserPermissions = async (req, res) => {
             name: true,
             email: true,
             username: true,
-            imageUrl: true
-          }
-        }
-      }
+            imageUrl: true,
+          },
+        },
+      },
     });
 
     res.status(200).json({
       status: 200,
       message: "User permissions updated successfully",
-      data: updatedWorkspaceUser
+      data: updatedWorkspaceUser,
     });
   } catch (error) {
     console.log(error);
@@ -1351,44 +1168,45 @@ const toggleUserStatus = async (req, res) => {
       include: {
         teamMemberships: {
           include: {
-            team: true
-          }
-        }
-      }
+            team: true,
+          },
+        },
+      },
     });
 
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      include: { 
+      include: {
         teamMemberships: {
           include: {
-            team: true
-          }
-        }
-      }
+            team: true,
+          },
+        },
+      },
     });
 
     if (!targetUser) {
       return res.status(404).json({
         status: 404,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
     // Check permissions - requestor must be app ADMIN or team ADMIN of the same team
     const requestorTeamMembership = requestor.teamMemberships?.[0];
     const targetTeamMembership = targetUser.teamMemberships?.[0];
-    
-    const canModify = requestor.role === 'ADMIN' || 
-                     (requestorTeamMembership && 
-                      targetTeamMembership &&
-                      requestorTeamMembership.teamId === targetTeamMembership.teamId && 
-                      requestorTeamMembership.role === 'ADMIN');
+
+    const canModify =
+      requestor.role === "ADMIN" ||
+      (requestorTeamMembership &&
+        targetTeamMembership &&
+        requestorTeamMembership.teamId === targetTeamMembership.teamId &&
+        requestorTeamMembership.role === "ADMIN");
 
     if (!canModify) {
       return res.status(403).json({
         status: 403,
-        message: "Only team admins or app admins can modify user status"
+        message: "Only team admins or app admins can modify user status",
       });
     }
 
@@ -1403,14 +1221,14 @@ const toggleUserStatus = async (req, res) => {
         username: true,
         isActive: true,
         department: true,
-        efficiency: true
-      }
+        efficiency: true,
+      },
     });
 
     res.status(200).json({
       status: 200,
-      message: `User ${isActive ? 'enabled' : 'disabled'} successfully`,
-      data: updatedUser
+      message: `User ${isActive ? "enabled" : "disabled"} successfully`,
+      data: updatedUser,
     });
   } catch (error) {
     console.log(error);
@@ -1421,7 +1239,7 @@ const toggleUserStatus = async (req, res) => {
 // Send workspace invitation
 const sendWorkspaceInvitation = async (req, res) => {
   const { workspaceId } = req.params;
-  const { email, role = 'MEMBER' } = req.body;
+  const { email, role = "MEMBER" } = req.body;
   const requestorId = req.user?.userId;
 
   try {
@@ -1430,25 +1248,25 @@ const sendWorkspaceInvitation = async (req, res) => {
       where: {
         workspaceId_userId: {
           workspaceId: parseInt(workspaceId),
-          userId: requestorId
-        }
-      }
+          userId: requestorId,
+        },
+      },
     });
 
-    if (!requestorAccess || requestorAccess.role !== 'ADMIN') {
+    if (!requestorAccess || requestorAccess.role !== "ADMIN") {
       return res.status(403).json({
         status: 403,
-        message: "Only workspace admins can send invitations"
+        message: "Only workspace admins can send invitations",
       });
     }
 
     const workspace = await prisma.workspace.findUnique({
-      where: { id: parseInt(workspaceId) }
+      where: { id: parseInt(workspaceId) },
     });
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
     });
 
     if (existingUser) {
@@ -1457,15 +1275,15 @@ const sendWorkspaceInvitation = async (req, res) => {
         where: {
           workspaceId_userId: {
             workspaceId: parseInt(workspaceId),
-            userId: existingUser.id
-          }
-        }
+            userId: existingUser.id,
+          },
+        },
       });
 
       if (existingMembership) {
         return res.status(400).json({
           status: 400,
-          message: "User is already a member of this workspace"
+          message: "User is already a member of this workspace",
         });
       }
 
@@ -1474,7 +1292,7 @@ const sendWorkspaceInvitation = async (req, res) => {
         data: {
           workspaceId: parseInt(workspaceId),
           userId: existingUser.id,
-          role
+          role,
         },
         include: {
           user: {
@@ -1483,16 +1301,16 @@ const sendWorkspaceInvitation = async (req, res) => {
               name: true,
               email: true,
               username: true,
-              imageUrl: true
-            }
-          }
-        }
+              imageUrl: true,
+            },
+          },
+        },
       });
 
       return res.status(200).json({
         status: 200,
         message: "Existing user added to workspace successfully",
-        data: workspaceUser
+        data: workspaceUser,
       });
     }
 
@@ -1504,49 +1322,54 @@ const sendWorkspaceInvitation = async (req, res) => {
         role,
         invitedBy: requestorId,
         token: generateInvitationToken(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-      }
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      },
     });
 
     // Send email invitation
     try {
       const inviter = await prisma.user.findUnique({
         where: { id: requestorId },
-        select: { 
-          name: true, 
+        select: {
+          name: true,
           email: true,
           teamMemberships: {
             include: {
               team: {
-                select: { name: true }
-              }
-            }
-          }
-        }
+                select: { name: true },
+              },
+            },
+          },
+        },
       });
 
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const projectUrl = `${frontendUrl}/projects`;
-      
+
       await emailService.sendWorkspaceInvitation(
         email,
         workspace.title,
-        inviter.teamMemberships?.[0]?.team?.name || 'Your Team',
+        inviter.teamMemberships?.[0]?.team?.name || "Your Team",
         projectUrl,
         inviter.name || inviter.email,
         frontendUrl
       );
-      
-      console.log(`✅ Workspace invitation email sent to ${email} for workspace ${workspace.title}`);
+
+      console.log(
+        `✅ Workspace invitation email sent to ${email} for workspace ${workspace.title}`
+      );
     } catch (emailError) {
-      console.error('❌ Failed to send workspace invitation email:', emailError);
+      console.error(
+        "❌ Failed to send workspace invitation email:",
+        emailError
+      );
       // Don't fail the request if email fails, but log the error
     }
 
     res.status(200).json({
       status: 200,
       message: "Invitation sent successfully",
-      data: invitation
+      data: invitation,
     });
   } catch (error) {
     console.log(error);
@@ -1571,20 +1394,20 @@ const getWorkspaceMembers = async (req, res) => {
             imageUrl: true,
             department: true,
             efficiency: true,
-            isActive: true
-          }
-        }
+            isActive: true,
+          },
+        },
       },
       orderBy: [
-        { role: 'desc' }, // Admins first
-        { user: { name: 'asc' } }
-      ]
+        { role: "desc" }, // Admins first
+        { user: { name: "asc" } },
+      ],
     });
 
     res.status(200).json({
       status: 200,
       message: "Success",
-      data: workspaceUsers
+      data: workspaceUsers,
     });
   } catch (error) {
     console.log(error);
@@ -1594,7 +1417,7 @@ const getWorkspaceMembers = async (req, res) => {
 
 // Helper function to generate invitation token
 const generateInvitationToken = () => {
-  return require('crypto').randomBytes(32).toString('hex');
+  return require("crypto").randomBytes(32).toString("hex");
 };
 
 module.exports = {
@@ -1612,6 +1435,5 @@ module.exports = {
   sendWorkspaceInvitation,
   getWorkspaceMembers,
   validateInviteCode: exports.validateInviteCode,
-  getTeamWorkspaces: exports.getTeamWorkspaces
+  getTeamWorkspaces: exports.getTeamWorkspaces,
 };
-

@@ -57,11 +57,13 @@ model Team {
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   teamImageUrl         String?
+  paddleCustomerId     String?                   @unique
   performanceMetrics   PerformanceMetric[]       @relation("teamMetrics")
   projects             Project[]                 @relation("TeamProjects")
   sprints              Sprint[]
   performanceSnapshots TeamPerformanceSnapshot[] @relation("teamSnapshots")
   teamMembers          TeamMember[]
+  teamSubscription     TeamSubscription?
 }
 
 model TeamMember {
@@ -150,7 +152,7 @@ model Project {
   slug        String          @unique
   summary     String?
   description String?
-  startDate   DateTime?
+  startDate   DateTime?       @default(now())
   targetDate  DateTime?
   priority    String?
   status      String          @default("Not Started")
@@ -430,6 +432,24 @@ model Subscription {
   @@map("subscriptions")
 }
 
+model TeamSubscription {
+  id                   String           @id @default(uuid())
+  teamId               String           @unique
+  plan                 SubscriptionPlan
+  status               String
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  paddleSubscriptionId String?          @unique
+  cancelAtPeriodEnd    Boolean          @default(false)
+  team                 Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([paddleSubscriptionId])
+  @@map("team_subscriptions")
+}
+
 model ImageUpload {
   id        String   @id @default(uuid())
   userId    String
@@ -537,7 +557,7 @@ enum TeamRole {
 }
 
 enum ProjectRole {
-  LEAD
+  ADMIN
   MEMBER
   OBSERVER
 }

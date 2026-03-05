@@ -1,32 +1,22 @@
 const { prisma } = require("../db");
 const emailService = require("../services/emailService");
 
-// Get team members with workspace access
+// Get project members with workspace access status
 exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
   const workspaceId = req.workspaceNumericId; // Set by workspace access middleware
   const { userId } = req.user;
 
   try {
-    // Get the workspace to find the team through project
+    // Get the workspace with project and team information
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       include: {
         project: {
           include: {
             team: {
-              include: {
-                teamMembers: {
-                  include: {
-                    user: {
-                      select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        imageUrl: true,
-                      }
-                    }
-                  }
-                }
+              select: {
+                id: true,
+                name: true
               }
             },
             members: {
@@ -37,6 +27,7 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
                     name: true,
                     email: true,
                     imageUrl: true,
+                    role: true
                   }
                 }
               }
@@ -53,52 +44,62 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
       });
     }
 
-    // Get current workspace members
+    // Get current workspace members with their access details
     const workspaceMembers = await prisma.workspaceUser.findMany({
       where: { workspaceId: workspaceId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            imageUrl: true,
-          }
-        }
+      select: {
+        id: true,
+        userId: true,
+        role: true,
+        createdAt: true
       }
     });
 
-    // Create a map of current members for quick lookup
-    const currentMemberIds = new Set(workspaceMembers.map(member => member.user.id));
+    // Create a map of workspace members for quick lookup
+    const workspaceMemberMap = new Map(
+      workspaceMembers.map(wm => [wm.userId, {
+        workspaceUserId: wm.id,
+        role: wm.role,
+        grantedAt: wm.createdAt
+      }])
+    );
 
-    // Collect all members from team and project
-    const allMembers = new Map();
-    
-    // Add team admins
-    workspace.project.team.teamMembers?.forEach(tm => {
-      allMembers.set(tm.user.id, tm.user);
-    });
-    
-    // Add project members
-    workspace.project.members?.forEach(pm => {
-      allMembers.set(pm.user.id, pm.user);
-    });
-
-    // Get all team/project members and add access status
-    const teamMembersWithAccess = Array.from(allMembers.values()).map(member => {
-      const workspaceMember = workspaceMembers.find(wm => wm.user.id === member.id);
+    // Map ALL project members to include workspace access status
+    const allMembers = workspace.project.members.map(pm => {
+      const workspaceAccess = workspaceMemberMap.get(pm.user.id);
+      
       return {
-        ...member,
-        hasAccess: currentMemberIds.has(member.id),
-        role: workspaceMember?.role || null,
-        workspaceMemberId: workspaceMember?.id || null
+        id: pm.id,
+        userId: pm.user.id,
+        name: pm.user.name,
+        email: pm.user.email,
+        imageUrl: pm.user.imageUrl,
+        appRole: pm.user.role,
+        projectRole: pm.role,
+        hasWorkspaceAccess: !!workspaceAccess,
+        workspaceRole: workspaceAccess?.role || null,
+        workspaceUserId: workspaceAccess?.workspaceUserId || null,
+        grantedAt: workspaceAccess?.grantedAt || null
       };
     });
 
     res.status(200).json({
       status: 200,
-      message: "Team members with workspace access retrieved successfully",
-      data: teamMembersWithAccess
+      message: "All project members with workspace access status retrieved successfully",
+      data: {
+        members: allMembers,
+        workspace: {
+          id: workspace.id,
+          title: workspace.title,
+          slug: workspace.slug
+        },
+        project: {
+          id: workspace.project.id,
+          title: workspace.project.title,
+          slug: workspace.project.slug
+        },
+        team: workspace.project.team
+      }
     });
   } catch (error) {
     console.error('Error in getTeamMembersWithWorkspaceAccess:', error);
@@ -109,14 +110,14 @@ exports.getTeamMembersWithWorkspaceAccess = async (req, res) => {
   }
 };
 
-// Grant workspace access to a team member
+// Grant workspace access to a project member
 exports.grantWorkspaceAccess = async (req, res) => {
   const workspaceId = req.workspaceNumericId; // Set by workspace access middleware
   const { memberId, role = "MEMBER" } = req.body;
   const { userId } = req.user;
 
   try {
-    // Verify the workspace exists and user has access
+    // Verify the workspace exists and get project information
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       include: {
@@ -133,18 +134,6 @@ exports.grantWorkspaceAccess = async (req, res) => {
                   select: { role: true }
                 }
               }
-            },
-            members: {
-              where: { userId: memberId },
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true
-                  }
-                }
-              }
             }
           }
         }
@@ -158,7 +147,7 @@ exports.grantWorkspaceAccess = async (req, res) => {
       });
     }
 
-    // Check if the requesting user is the workspace ADMIN or team ADMIN
+    // Check if the requesting user has permission (workspace ADMIN or team ADMIN)
     const workspaceUserRole = workspace.members[0]?.role;
     const teamUserRole = workspace.project.team.teamMembers[0]?.role;
     const isWorkspaceAdmin = workspaceUserRole === 'ADMIN';
@@ -167,27 +156,38 @@ exports.grantWorkspaceAccess = async (req, res) => {
     if (!isWorkspaceAdmin && !isTeamAdmin) {
       return res.status(403).json({
         status: 403,
-        message: "You don't have permission to grant workspace access"
+        message: "Only workspace admins or team admins can manage workspace access"
       });
     }
 
-    // Check if the member exists in the project or is a team admin
-    const isProjectMember = workspace.project.members.length > 0;
-    const teamMember = await prisma.teamMember.findFirst({
+    // CRITICAL: Verify the user is a PROJECT member (not just team member)
+    const projectMember = await prisma.projectMember.findFirst({
       where: {
-        teamId: workspace.project.teamId,
+        projectId: workspace.project.id,
         userId: memberId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true
+          }
+        }
       }
     });
     
-    if (!isProjectMember && !teamMember) {
-      return res.status(404).json({
-        status: 404,
-        message: "User is not a member of this project or team"
+    if (!projectMember) {
+      return res.status(403).json({
+        status: 403,
+        message: "User must be a project member before being granted workspace access. Please add them to the project first."
       });
     }
 
-    // Check if member already has access
+    const member = projectMember.user;
+
+    // Check if member already has workspace access
     const existingAccess = await prisma.workspaceUser.findFirst({
       where: {
         workspaceId: workspaceId,
@@ -196,7 +196,7 @@ exports.grantWorkspaceAccess = async (req, res) => {
     });
 
     if (existingAccess) {
-      // Update existing access
+      // Update existing access role
       const updatedAccess = await prisma.workspaceUser.update({
         where: { id: existingAccess.id },
         data: { role },
@@ -217,57 +217,155 @@ exports.grantWorkspaceAccess = async (req, res) => {
         message: `Workspace access updated for ${member.name || member.email}`,
         data: updatedAccess
       });
-    } else {
-      // Grant new access
-      const workspaceAccess =       await prisma.workspaceUser.create({
-        data: {
-          workspaceId: workspaceId,
-          userId: memberId,
-          role,
+    }
+
+    // Grant new workspace access
+    const workspaceAccess = await prisma.workspaceUser.create({
+      data: {
+        workspaceId: workspaceId,
+        userId: memberId,
+        role,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            imageUrl: true,
+          }
+        }
+      }
+    });
+
+    // Send email notification (non-blocking)
+    try {
+      const granter = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true }
+      });
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const workspaceUrl = `${frontendUrl}/workspace/${workspace.slug}`;
+      
+      await emailService.sendWorkspaceInvitation(
+        member.email,
+        workspace.title,
+        workspace.project.team.name,
+        workspaceUrl,
+        granter.name || granter.email,
+        frontendUrl
+      );
+    } catch (emailError) {
+      console.error('Failed to send workspace invitation email:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    return res.status(201).json({
+      status: 201,
+      message: `Workspace access granted to ${member.name || member.email}`,
+      data: workspaceAccess
+    });
+  } catch (error) {
+    console.error('Error in grantWorkspaceAccess:', error);
+    res.status(500).json({
+      status: 500,
+      message: "Internal Server Error"
+    });
+  }
+};
+
+// Revoke workspace access from a member
+exports.revokeWorkspaceAccess = async (req, res) => {
+  const workspaceId = req.workspaceNumericId; // Set by workspace access middleware
+  const { memberId } = req.params;
+  const { userId } = req.user;
+
+  try {
+    // Verify the workspace exists and user has permission
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      include: {
+        members: {
+          where: { userId: userId },
+          select: { role: true }
         },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              imageUrl: true,
+        project: {
+          include: {
+            team: {
+              include: {
+                teamMembers: {
+                  where: { userId: userId },
+                  select: { role: true }
+                }
+              }
             }
           }
         }
-      });
-
-      // Send email notification if email service is configured
-      try {
-        const granter = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { name: true, email: true }
-        });
-
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const workspaceUrl = `${frontendUrl}/workspace/${workspaceId}`;
-        
-        await emailService.sendWorkspaceInvitation(
-          member.email,
-          workspace.title,
-          workspace.project.team.name,
-          workspaceUrl,
-          granter.name || granter.email,
-          frontendUrl
-        );
-      } catch (emailError) {
-        console.error('Failed to send workspace invitation email:', emailError);
-        // Don't fail the request if email fails
       }
+    });
 
-      return res.status(201).json({
-        status: 201,
-        message: `Workspace access granted to ${member.name || member.email}`,
-        data: workspaceAccess
+    if (!workspace) {
+      return res.status(404).json({
+        status: 404,
+        message: "Workspace not found"
       });
     }
+
+    // Check if the requesting user has permission (workspace ADMIN or team ADMIN)
+    const workspaceUserRole = workspace.members[0]?.role;
+    const teamUserRole = workspace.project.team.teamMembers[0]?.role;
+    const isWorkspaceAdmin = workspaceUserRole === 'ADMIN';
+    const isTeamAdmin = teamUserRole === 'ADMIN';
+
+    if (!isWorkspaceAdmin && !isTeamAdmin) {
+      return res.status(403).json({
+        status: 403,
+        message: "Only workspace admins or team admins can revoke workspace access"
+      });
+    }
+
+    // Find and delete the workspace access
+    const workspaceUser = await prisma.workspaceUser.findFirst({
+      where: {
+        workspaceId: workspaceId,
+        userId: memberId
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!workspaceUser) {
+      return res.status(404).json({
+        status: 404,
+        message: "User does not have access to this workspace"
+      });
+    }
+
+    // Don't allow removing ADMIN users - they have permanent access
+    if (workspaceUser.role === 'ADMIN') {
+      return res.status(400).json({
+        status: 400,
+        message: "Cannot remove workspace ADMIN users. ADMIN users have permanent access to the workspace."
+      });
+    }
+
+    await prisma.workspaceUser.delete({
+      where: { id: workspaceUser.id }
+    });
+
+    res.status(200).json({
+      status: 200,
+      message: `Workspace access revoked from ${workspaceUser.user.name || workspaceUser.user.email}`
+    });
   } catch (error) {
-    console.error('Error in grantWorkspaceAccess:', error);
+    console.error('Error in revokeWorkspaceAccess:', error);
     res.status(500).json({
       status: 500,
       message: "Internal Server Error"
